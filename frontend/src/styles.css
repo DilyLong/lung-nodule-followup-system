@@ -202,6 +202,21 @@ td svg { vertical-align: middle; }
 .spec-check-list { display: grid; gap: 10px; }
 .spec-check-list p { margin: 0; display: flex; align-items: flex-start; gap: 8px; color: #475569; }
 
+.status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.status-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; }
+.status-card span { display: block; color: #64748b; margin-bottom: 6px; }
+.status-card strong { font-size: 26px; }
+.readiness-list { display: grid; gap: 10px; }
+.readiness-list.grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.readiness-list div { display: flex; gap: 10px; align-items: flex-start; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px; }
+.readiness-list div div { display: grid; gap: 4px; background: transparent; border: 0; padding: 0; }
+.readiness-list strong, .readiness-list span { display: block; }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; background: #cbd5e1; }
+.status-dot.ok { background: #22c55e; }
+.status-dot.missing { background: #ef4444; }
+.status-icon-ok { color: #16a34a; margin-top: 2px; }
+.status-icon-missing { color: #dc2626; margin-top: 2px; }
+
 .dependency-ok { color: #166534; display: inline-flex; align-items: center; gap: 6px; font-weight: 800; }
 .dependency-missing { color: #b91c1c; display: inline-flex; align-items: center; gap: 6px; font-weight: 800; }
 

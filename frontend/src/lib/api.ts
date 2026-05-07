@@ -365,6 +365,7 @@ export interface ModelArtifactStatus {
   exists: boolean;
   dependency: string;
   dependency_available: boolean;
+  sha256?: string | null;
   status: string;
 }
 
@@ -431,6 +432,42 @@ export interface ModelSelfCheckReport {
 
 export async function runModelSelfCheck() {
   const { data } = await api.post<ModelSelfCheckReport>('/model/self-check');
+  return data;
+}
+
+export interface SystemStatus {
+  backend: {
+    status: string;
+    api_version: string;
+    checked_at: string;
+  };
+  database: {
+    patient_count: number;
+    study_count: number;
+    nodule_count: number;
+    measurement_count: number;
+    analysis_count: number;
+    report_count: number;
+    final_report_count: number;
+  };
+  model: {
+    active_mode: string;
+    active_backend: string;
+    input_schema_version: string;
+    surrogate_model_version: string;
+    artifacts: ModelArtifactStatus[];
+  };
+  exports: Array<{ name: string; endpoint: string; available: boolean }>;
+  latest: {
+    analysis: null | { id: number; patient_id: number; nodule_id: number | null; created_at: string; risk_level: string; risk_score: number };
+    report: null | { id: number; patient_id: number; analysis_id: number; created_at: string; status: string; finalized_at: string | null };
+    final_report: null | { id: number; patient_id: number; analysis_id: number; created_at: string; status: string; finalized_at: string | null };
+  };
+  readiness: Array<{ key: string; label: string; available: boolean }>;
+}
+
+export async function fetchSystemStatus() {
+  const { data } = await api.get<SystemStatus>('/system/status');
   return data;
 }
 

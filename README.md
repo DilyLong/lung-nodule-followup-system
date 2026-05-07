@@ -15,6 +15,7 @@
 - 数据集规范页面，展示真实 DICOM 多期目录、CSV 字段、标签枚举和质控规则
 - 研究导出：基础队列表、测量表、分析研究表 CSV
 - 模型接入状态页，检查 `.pt` / `.onnx` 权重、推理依赖、当前真实/代理模型模式，并支持模型输入 schema 与 dry-run 推理自检
+- 系统状态总览页，集中展示后端健康、数据规模、模型状态、导出能力和功能成熟度
 
 当前暂无真实 CT 数据，因此系统内置模拟病例和模拟影像指标。后续可把 `backend/app/pipeline` 中的占位实现替换为真实 DICOM 读取、三维配准和 PyTorch 模型。
 
@@ -69,6 +70,7 @@ npm run dev
 - 模型自检：模型状态页可调用 `POST /model/self-check`，使用内置三期 synthetic temporal fixture 校验 `temporal-nodule-v1` 输入 schema，并执行真实模型或代理 fallback dry-run。
 - 多结节分析：病例详情页可选择目标结节运行 `POST /analysis/{patient_id}/run?nodule_id=...`，每次分析结果记录 `nodule_id`，便于临床展示和回顾性研究表按结节追踪。
 - 风险追踪：每次分析会在 `features_json.trace` 与 `research-table.csv` 中记录数据 schema、特征版本、模型版本、artifact/hash、推理时间和输入特征维度。
+- 系统总览：前端侧边栏“系统总览”页面读取 `GET /system/status`，集中展示后端健康、数据规模、模型模式、导出能力、最近活动和七步功能成熟度。
 - 报告确认：结构化报告页可调用 `PUT /reports/{report_id}` 保存医生编辑后的 Markdown、医生意见和随访建议，并可确认最终版。
 
 ## 后续扩展
