@@ -256,3 +256,27 @@ class ImportValidationReport(BaseModel):
     summary: ImportValidationSummary
     files: list[ImportFileValidationSummary]
     issues: list[ImportValidationIssue]
+
+
+class ModelSelfCheckIssue(BaseModel):
+    field: str
+    severity: str
+    message: str
+
+
+class ModelSelfCheckCheck(BaseModel):
+    name: str
+    passed: bool
+    message: str
+
+
+class ModelSelfCheckReport(BaseModel):
+    passed: bool
+    mode: str
+    backend: str
+    demo_input_source: str
+    checks: list[ModelSelfCheckCheck]
+    issues: list[ModelSelfCheckIssue]
+    model_input_preview: dict[str, Any]
+    inference: dict[str, Any] | None
+    runtime_status: dict[str, Any]

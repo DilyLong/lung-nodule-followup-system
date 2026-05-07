@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 import importlib.util
 import math
 from dataclasses import dataclass
@@ -7,6 +8,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import numpy as np
+
+from .features import calculate_temporal_features
 
 INPUT_SCHEMA_VERSION = "temporal-nodule-v1"
 MODEL_VERSION = "surrogate-2026-05-07"
@@ -339,6 +342,230 @@ def _surrogate_prediction(model_input: dict[str, Any], status: str, reason: str,
     if artifact_path:
         result["model_artifact"] = artifact_path.name
     return result
+
+
+def validate_temporal_model_input(model_input: dict[str, Any]) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+
+    def add_issue(field: str, message: str) -> None:
+        issues.append({"field": field, "severity": "error", "message": message})
+
+    if model_input.get("input_schema_version") != INPUT_SCHEMA_VERSION:
+        add_issue("input_schema_version", f"Expected {INPUT_SCHEMA_VERSION}")
+
+    timepoint_count = model_input.get("timepoint_count")
+    if not isinstance(timepoint_count, int) or timepoint_count < 2:
+        add_issue("timepoint_count", "At least two temporal points are required")
+
+    time_series = model_input.get("time_series")
+    if not isinstance(time_series, list) or len(time_series) < 2:
+        add_issue("time_series", "time_series must include at least two points")
+    else:
+        if isinstance(timepoint_count, int) and timepoint_count != len(time_series):
+            add_issue("timepoint_count", "timepoint_count must match time_series length")
+        required_numeric = [
+            "diameter_mm",
+            "volume_mm3",
+            "mean_hu",
+            "solid_component_percent",
+            "spiculation_score",
+            "lobulation_score",
+            "pleural_retraction_score",
+        ]
+        previous_date = ""
+        for index, point in enumerate(time_series):
+            if not isinstance(point, dict):
+                add_issue(f"time_series[{index}]", "Each time point must be an object")
+                continue
+            if point.get("study_id") is None:
+                add_issue(f"time_series[{index}].study_id", "study_id is required")
+            study_date = point.get("study_date")
+            if not study_date:
+                add_issue(f"time_series[{index}].study_date", "study_date is required")
+            elif previous_date and str(study_date) < previous_date:
+                add_issue(f"time_series[{index}].study_date", "study_date must be chronological")
+            previous_date = str(study_date or previous_date)
+            for key in required_numeric:
+                value = point.get(key)
+                if not isinstance(value, int | float):
+                    add_issue(f"time_series[{index}].{key}", f"{key} must be numeric")
+                elif key in {"diameter_mm", "volume_mm3"} and value <= 0:
+                    add_issue(f"time_series[{index}].{key}", f"{key} must be positive")
+
+    clinical = model_input.get("clinical_features")
+    if not isinstance(clinical, dict):
+        add_issue("clinical_features", "clinical_features is required")
+    else:
+        age = clinical.get("age")
+        if not isinstance(age, int | float) or age <= 0:
+            add_issue("clinical_features.age", "age must be positive")
+        if not clinical.get("nodule_type"):
+            add_issue("clinical_features.nodule_type", "nodule_type is required")
+        if "has_smoking_history" not in clinical:
+            add_issue("clinical_features.has_smoking_history", "has_smoking_history is required")
+
+    derived = model_input.get("derived_features")
+    if not isinstance(derived, dict):
+        add_issue("derived_features", "derived_features is required")
+    else:
+        required_derived = [
+            "followup_days",
+            "diameter_change_mm",
+            "volume_change_percent",
+            "density_change_hu",
+            "solid_component_change_percent",
+            "annualized_diameter_growth_mm",
+            "spiculation_delta",
+            "lobulation_delta",
+            "pleural_retraction_delta",
+        ]
+        for key in required_derived:
+            if key not in derived:
+                add_issue(f"derived_features.{key}", f"{key} is required")
+            elif derived[key] is not None and not isinstance(derived[key], int | float):
+                add_issue(f"derived_features.{key}", f"{key} must be numeric or null")
+
+    return issues
+
+
+def build_demo_self_check_input() -> dict[str, Any]:
+    measurements = [
+        {
+            "study_id": 9001,
+            "study_date": date(2024, 1, 8),
+            "diameter_mm": 7.4,
+            "volume_mm3": 218.0,
+            "mean_hu": -612.0,
+            "min_hu": -820.0,
+            "max_hu": -168.0,
+            "roi_area_mm2": 42.0,
+            "solid_component_percent": 18.0,
+            "spiculation_score": 0.18,
+            "lobulation_score": 0.12,
+            "pleural_retraction_score": 0.05,
+        },
+        {
+            "study_id": 9002,
+            "study_date": date(2024, 7, 12),
+            "diameter_mm": 8.5,
+            "volume_mm3": 306.0,
+            "mean_hu": -548.0,
+            "min_hu": -760.0,
+            "max_hu": -92.0,
+            "roi_area_mm2": 53.0,
+            "solid_component_percent": 26.0,
+            "spiculation_score": 0.24,
+            "lobulation_score": 0.18,
+            "pleural_retraction_score": 0.09,
+        },
+        {
+            "study_id": 9003,
+            "study_date": date(2025, 1, 16),
+            "diameter_mm": 9.8,
+            "volume_mm3": 452.0,
+            "mean_hu": -486.0,
+            "min_hu": -702.0,
+            "max_hu": -38.0,
+            "roi_area_mm2": 68.0,
+            "solid_component_percent": 38.0,
+            "spiculation_score": 0.35,
+            "lobulation_score": 0.26,
+            "pleural_retraction_score": 0.16,
+        },
+    ]
+    features = calculate_temporal_features(measurements)
+    return build_temporal_model_input(features, "部分实性", 64, "既往吸烟 30 包年，已戒烟")
+
+
+def _self_check_passes(mode: str, schema_issues: list[dict[str, Any]], inference: dict[str, Any] | None) -> bool:
+    if schema_issues or inference is None:
+        return False
+    model_status = inference.get("model_status")
+    if model_status in {"fallback_load_error", "fallback_schema_mismatch", "fallback_inference_error"}:
+        return False
+    if mode == "fallback_missing_dependency":
+        return False
+    return True
+
+
+def _model_input_preview(model_input: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "input_schema_version": model_input.get("input_schema_version"),
+        "timepoint_count": model_input.get("timepoint_count"),
+        "time_series": model_input.get("time_series", [])[:3],
+        "clinical_features": model_input.get("clinical_features"),
+        "derived_features": model_input.get("derived_features"),
+    }
+
+
+def run_model_self_check() -> dict[str, Any]:
+    runtime_status = model_runtime_status()
+    model_input = build_demo_self_check_input()
+    schema_issues = validate_temporal_model_input(model_input)
+    checks = [
+        {
+            "name": "artifact_status",
+            "passed": runtime_status["active_mode"] != "fallback_missing_dependency",
+            "message": active_mode_message(runtime_status["active_mode"]),
+        },
+        {
+            "name": "input_schema",
+            "passed": not schema_issues,
+            "message": "Demo input matches temporal-nodule-v1" if not schema_issues else f"{len(schema_issues)} schema issue(s) found",
+        },
+    ]
+    issues = list(schema_issues)
+    inference: dict[str, Any] | None = None
+    if not schema_issues:
+        try:
+            inference = predict_progression_risk(
+                {"series": model_input["time_series"], **model_input["derived_features"], "timepoint_count": model_input["timepoint_count"]},
+                model_input["clinical_features"]["nodule_type"],
+                int(model_input["clinical_features"]["age"]),
+                model_input["clinical_features"]["smoking_history"],
+            )
+            inference.pop("model_input", None)
+            inference_status = inference.get("model_status")
+            inference_passed = inference_status not in {"fallback_load_error", "fallback_schema_mismatch", "fallback_inference_error"}
+            checks.append(
+                {
+                    "name": "inference",
+                    "passed": inference_passed,
+                    "message": "Dry-run inference completed" if inference_passed else f"Dry-run fell back because of {inference_status}",
+                }
+            )
+            if inference_status == "fallback_missing_dependency":
+                issues.append({"field": "model_artifact", "severity": "warning", "message": inference.get("fallback_reason", "Model dependency is missing")})
+            elif inference_status in {"fallback_load_error", "fallback_schema_mismatch", "fallback_inference_error"}:
+                issues.append({"field": "model_artifact", "severity": "error", "message": inference.get("fallback_reason", "Real model dry-run failed")})
+            elif inference_status == "surrogate_no_weights":
+                issues.append({"field": "model_artifact", "severity": "warning", "message": "No real model weights found; surrogate dry-run passed"})
+        except Exception as exc:
+            checks.append({"name": "inference", "passed": False, "message": str(exc)})
+            issues.append({"field": "inference", "severity": "error", "message": str(exc)})
+
+    passed = _self_check_passes(runtime_status["active_mode"], schema_issues, inference) and all(check["passed"] for check in checks)
+    return {
+        "passed": passed,
+        "mode": runtime_status["active_mode"],
+        "backend": runtime_status["active_backend"],
+        "demo_input_source": "synthetic_temporal_fixture",
+        "checks": checks,
+        "issues": issues,
+        "model_input_preview": _model_input_preview(model_input),
+        "inference": inference,
+        "runtime_status": runtime_status,
+    }
+
+
+def active_mode_message(mode: str) -> str:
+    messages = {
+        "real_torch_ready": "TorchScript artifact and torch dependency are available",
+        "real_onnx_ready": "ONNX artifact and onnxruntime dependency are available",
+        "surrogate_no_weights": "No real artifact found; surrogate backend will be checked",
+        "fallback_missing_dependency": "A real artifact exists but its runtime dependency is missing",
+    }
+    return messages.get(mode, mode)
 
 
 def _artifact_model() -> tuple[Path, TemporalProgressionModel] | None:

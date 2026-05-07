@@ -370,6 +370,52 @@ export async function fetchModelRuntimeStatus() {
   return data;
 }
 
+export interface ModelSelfCheckIssue {
+  field: string;
+  severity: 'error' | 'warning' | string;
+  message: string;
+}
+
+export interface ModelSelfCheckCheck {
+  name: string;
+  passed: boolean;
+  message: string;
+}
+
+export interface ModelSelfCheckReport {
+  passed: boolean;
+  mode: string;
+  backend: string;
+  demo_input_source: string;
+  checks: ModelSelfCheckCheck[];
+  issues: ModelSelfCheckIssue[];
+  model_input_preview: {
+    input_schema_version?: string;
+    timepoint_count?: number;
+    time_series?: Record<string, unknown>[];
+    clinical_features?: Record<string, unknown>;
+    derived_features?: Record<string, unknown>;
+  };
+  inference: null | {
+    risk_score?: number;
+    risk_level?: string;
+    model_name?: string;
+    model_status?: string;
+    model_version?: string;
+    input_schema_version?: string;
+    backend?: string;
+    fallback_reason?: string;
+    model_artifact?: string;
+    contributions?: Array<Record<string, unknown>>;
+  };
+  runtime_status: ModelRuntimeStatus;
+}
+
+export async function runModelSelfCheck() {
+  const { data } = await api.post<ModelSelfCheckReport>('/model/self-check');
+  return data;
+}
+
 export function sliceImageUrl(sliceId: number) {
   return `${api.defaults.baseURL}/imaging/slices/${sliceId}/image`;
 }
