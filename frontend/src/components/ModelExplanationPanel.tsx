@@ -18,6 +18,8 @@ interface ModelRiskPayload {
   model_version?: string;
   input_schema_version?: string;
   backend?: string;
+  fallback_reason?: string;
+  model_artifact?: string;
   model_input?: {
     timepoint_count?: number;
     clinical_features?: Record<string, unknown>;
@@ -36,8 +38,23 @@ function parseRisk(analysis?: Analysis): ModelRiskPayload | null {
 }
 
 function statusText(status?: string) {
-  if (status === 'surrogate_no_weights') return 'ConvLSTM 兼容代理模型';
-  return status ?? '未记录';
+  const labels: Record<string, string> = {
+    real_torch_loaded: '真实 PyTorch 模型',
+    real_onnx_loaded: '真实 ONNX 模型',
+    surrogate_no_weights: 'ConvLSTM 兼容代理模型',
+    fallback_missing_artifact: '缺少权重，已回退代理模型',
+    fallback_missing_dependency: '缺少推理依赖，已回退代理模型',
+    fallback_load_error: '模型加载失败，已回退代理模型',
+    fallback_inference_error: '模型推理失败，已回退代理模型',
+    fallback_schema_mismatch: '模型 schema 不匹配，已回退代理模型',
+  };
+  return status ? labels[status] ?? status : '未记录';
+}
+
+function modelMode(status?: string) {
+  if (status?.startsWith('real_')) return 'real';
+  if (status?.startsWith('fallback_')) return 'fallback';
+  return 'proxy';
 }
 
 export default function ModelExplanationPanel({ analysis }: Props) {
@@ -54,6 +71,8 @@ export default function ModelExplanationPanel({ analysis }: Props) {
   const contributions = risk.contributions?.slice(0, 5) ?? [];
   const maxPoints = Math.max(...contributions.map((item) => item.points), 0.01);
 
+  const mode = modelMode(risk.model_status);
+
   return (
     <div className="model-explanation">
       <div className="model-summary">
@@ -63,9 +82,16 @@ export default function ModelExplanationPanel({ analysis }: Props) {
       </div>
       <p className="model-note">
         {risk.model_name ?? 'Temporal model'} · 后端 {risk.backend ?? '-'} · 输入 schema {risk.input_schema_version ?? '-'}
+        {risk.model_artifact ? ` · 权重 ${risk.model_artifact}` : ''}
       </p>
-      {risk.model_status === 'surrogate_no_weights' && (
-        <p className="info-banner compact">当前为可解释代理模型，接口已兼容后续 PyTorch ConvLSTM 权重接入。</p>
+      {mode === 'real' && (
+        <p className="success-banner compact">当前分析已使用真实模型权重推理，风险评分来自模型 artifact。</p>
+      )}
+      {mode === 'proxy' && (
+        <p className="info-banner compact">当前为可解释代理模型，接口已兼容后续 PyTorch / ONNX 权重接入。</p>
+      )}
+      {mode === 'fallback' && (
+        <p className="info-banner compact">真实模型未完成推理，系统已安全回退到代理模型。{risk.fallback_reason ? `原因：${risk.fallback_reason}` : ''}</p>
       )}
       <div className="contribution-list">
         {contributions.map((item) => (

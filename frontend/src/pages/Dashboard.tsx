@@ -1,7 +1,7 @@
-import { AlertTriangle, ChevronRight, Clock, Search } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Clock, Download, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Page } from '../App';
-import { fetchPatients, type PatientSummary } from '../lib/api';
+import { fetchPatients, measurementsCsvUrl, researchTableCsvUrl, type PatientSummary } from '../lib/api';
 
 interface Props {
   setPage: (page: Page) => void;
@@ -35,7 +35,11 @@ export default function Dashboard({ setPage }: Props) {
           <h1>肺结节多期 CT 智能随访工作台</h1>
           <span>面向胸外科门诊随访的病例管理、时序分析和个体化建议原型。</span>
         </div>
-        <button className="primary" onClick={() => setPage({ name: 'upload' })}>上传新检查</button>
+        <div className="button-row">
+          <a className="ghost" href={researchTableCsvUrl()}><Download size={17} /> 导出全队列研究表</a>
+          <a className="ghost" href={measurementsCsvUrl()}><Download size={17} /> 导出全队列测量表</a>
+          <button className="primary" onClick={() => setPage({ name: 'upload' })}>上传新检查</button>
+        </div>
       </header>
 
       <section className="stat-grid">

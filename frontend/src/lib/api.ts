@@ -270,6 +270,36 @@ export async function confirmAnnotationMatch(annotationId: number, noduleId: num
   return data;
 }
 
+export interface ImportSpec {
+  spec_version: string;
+  date_format: string;
+  coordinate_system: Record<string, string>;
+  dicom_layout: Record<string, string>;
+  files: Record<string, { required_columns: string[]; optional_columns: string[]; notes: string }>;
+  allowed_values: Record<string, string[]>;
+  quality_checks: string[];
+  future_import_endpoint: { planned: boolean; scope: string };
+}
+
+function buildDownloadUrl(path: string, patientId?: number | null) {
+  const baseUrl = api.defaults.baseURL ?? '';
+  const suffix = patientId ? `?patient_id=${patientId}` : '';
+  return `${baseUrl}${path}${suffix}`;
+}
+
+export function researchTableCsvUrl(patientId?: number | null) {
+  return buildDownloadUrl('/exports/research-table.csv', patientId);
+}
+
+export function measurementsCsvUrl(patientId?: number | null) {
+  return buildDownloadUrl('/exports/measurements.csv', patientId);
+}
+
+export async function fetchImportSpec() {
+  const { data } = await api.get<ImportSpec>('/imports/spec');
+  return data;
+}
+
 export function sliceImageUrl(sliceId: number) {
   return `${api.defaults.baseURL}/imaging/slices/${sliceId}/image`;
 }

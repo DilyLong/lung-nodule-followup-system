@@ -14,7 +14,7 @@ button, input, select { font: inherit; }
 .brand strong { display: block; font-size: 18px; }
 .brand span { display: block; color: #94a3b8; font-size: 13px; margin-top: 4px; }
 nav { display: grid; gap: 10px; }
-nav button, .ghost, .primary { border: 0; border-radius: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; justify-content: center; }
+nav button, .ghost, .primary { border: 0; border-radius: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; justify-content: center; text-decoration: none; }
 nav button { color: #cbd5e1; background: transparent; padding: 12px; justify-content: flex-start; }
 nav button.active, nav button:hover:not(:disabled) { background: rgba(59, 130, 246, 0.22); color: white; }
 nav button:disabled { cursor: not-allowed; opacity: 0.45; }
@@ -175,6 +175,11 @@ td svg { vertical-align: middle; }
 .contribution-bar { height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
 .contribution-bar span { display: block; height: 100%; background: linear-gradient(90deg, #2563eb, #dc2626); }
 .contribution-item b { text-align: right; }
+
+.model-status-chip { margin-top: 12px; display: inline-flex; width: fit-content; border-radius: 999px; padding: 6px 10px; font-size: 13px; font-weight: 800; }
+.model-status-chip.real { background: #dcfce7; color: #166534; }
+.model-status-chip.proxy { background: #dbeafe; color: #1d4ed8; }
+.model-status-chip.fallback { background: #fef3c7; color: #92400e; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 

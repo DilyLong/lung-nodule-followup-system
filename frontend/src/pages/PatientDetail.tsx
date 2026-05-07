@@ -1,4 +1,4 @@
-import { FileText, PlayCircle, RefreshCw, Upload } from 'lucide-react';
+import { Download, FileText, PlayCircle, RefreshCw, Upload } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Page } from '../App';
 import CtSliceViewer from '../components/CtSliceViewer';
@@ -9,7 +9,25 @@ import NoduleManager from '../components/NoduleManager';
 import NoduleMetrics from '../components/NoduleMetrics';
 import RiskTrendChart from '../components/RiskTrendChart';
 import StudyTimeline from '../components/StudyTimeline';
-import { createReport, fetchPatient, runAnalysis, type Analysis, type Nodule, type PatientDetail as PatientDetailType } from '../lib/api';
+import { createReport, fetchPatient, measurementsCsvUrl, researchTableCsvUrl, runAnalysis, type Analysis, type Nodule, type PatientDetail as PatientDetailType } from '../lib/api';
+
+function parseModelStatus(analysis?: Analysis) {
+  if (!analysis) return null;
+  try {
+    const features = JSON.parse(analysis.features_json);
+    return features.risk?.model_status ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function modelStatusLabel(status: string | null) {
+  if (!status) return '模型未记录';
+  if (status.startsWith('real_')) return '真实模型';
+  if (status.startsWith('fallback_')) return 'Fallback 代理模型';
+  if (status === 'surrogate_no_weights') return '代理模型';
+  return status;
+}
 
 interface Props {
   patientId: number;
@@ -45,6 +63,7 @@ export default function PatientDetail({ patientId, setPage }: Props) {
   const nodule = patient?.nodules.find((item) => item.id === selectedNoduleId) ?? patient?.nodules[0];
   const firstMeasurement = patient?.studies[0]?.measurements[0];
   const latestMeasurement = patient?.studies.at(-1)?.measurements[0];
+  const modelStatus = parseModelStatus(latestAnalysis);
 
   function handleNoduleCreated(nodule: Nodule) {
     setPatient((current) => current ? { ...current, nodules: [...current.nodules, nodule] } : current);
@@ -85,6 +104,8 @@ export default function PatientDetail({ patientId, setPage }: Props) {
           <span>{patient.sex}，{patient.age} 岁，{patient.primary_diagnosis}</span>
         </div>
         <div className="button-row">
+          <a className="ghost" href={researchTableCsvUrl(patient.id)}><Download size={17} /> 导出本病例研究表</a>
+          <a className="ghost" href={measurementsCsvUrl(patient.id)}><Download size={17} /> 导出本病例测量表</a>
           <button className="ghost" onClick={() => setPage({ name: 'upload', patientId })}><Upload size={17} /> 上传检查</button>
           <button className="primary" onClick={handleRunAnalysis} disabled={running}>
             {running ? <RefreshCw size={17} className="spin" /> : <PlayCircle size={17} />} 运行时序分析
@@ -123,6 +144,7 @@ export default function PatientDetail({ patientId, setPage }: Props) {
           <span>AI 风险分层</span>
           <strong>{latestAnalysis?.risk_level ?? '待分析'}</strong>
           <p>{latestAnalysis ? `风险评分 ${latestAnalysis.risk_score.toFixed(2)}，配准质量 ${latestAnalysis.registration_quality.toFixed(2)}` : '点击运行时序分析后生成风险评分。'}</p>
+          {latestAnalysis && <span className={`model-status-chip ${modelStatus?.startsWith('real_') ? 'real' : modelStatus?.startsWith('fallback_') ? 'fallback' : 'proxy'}`}>{modelStatusLabel(modelStatus)}</span>}
         </div>
       </section>
 
