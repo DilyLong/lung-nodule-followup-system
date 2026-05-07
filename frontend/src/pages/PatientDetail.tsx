@@ -9,7 +9,7 @@ import NoduleManager from '../components/NoduleManager';
 import NoduleMetrics from '../components/NoduleMetrics';
 import RiskTrendChart from '../components/RiskTrendChart';
 import StudyTimeline from '../components/StudyTimeline';
-import { createReport, fetchPatient, measurementsCsvUrl, researchTableCsvUrl, runAnalysis, type Analysis, type Nodule, type PatientDetail as PatientDetailType } from '../lib/api';
+import { createReport, fetchPatient, cohortTableCsvUrl, measurementsCsvUrl, researchTableCsvUrl, runAnalysis, type Analysis, type Nodule, type PatientDetail as PatientDetailType } from '../lib/api';
 
 function parseModelStatus(analysis?: Analysis) {
   if (!analysis) return null;
@@ -104,6 +104,7 @@ export default function PatientDetail({ patientId, setPage }: Props) {
           <span>{patient.sex}，{patient.age} 岁，{patient.primary_diagnosis}</span>
         </div>
         <div className="button-row">
+          <a className="ghost" href={cohortTableCsvUrl(patient.id)}><Download size={17} /> 导出本病例基础队列表</a>
           <a className="ghost" href={researchTableCsvUrl(patient.id)}><Download size={17} /> 导出本病例研究表</a>
           <a className="ghost" href={measurementsCsvUrl(patient.id)}><Download size={17} /> 导出本病例测量表</a>
           <button className="ghost" onClick={() => setPage({ name: 'upload', patientId })}><Upload size={17} /> 上传检查</button>

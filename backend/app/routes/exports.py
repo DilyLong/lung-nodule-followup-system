@@ -38,6 +38,41 @@ MEASUREMENT_FIELDS = [
     "thumbnail_seed",
 ]
 
+COHORT_FIELDS = [
+    "patient_id",
+    "patient_code",
+    "name",
+    "sex",
+    "age",
+    "smoking_history",
+    "family_history",
+    "primary_diagnosis",
+    "nodule_id",
+    "nodule_label",
+    "lobe",
+    "nodule_type",
+    "baseline_impression",
+    "study_count",
+    "measurement_count",
+    "baseline_study_date",
+    "latest_study_date",
+    "baseline_diameter_mm",
+    "latest_diameter_mm",
+    "diameter_change_mm",
+    "baseline_volume_mm3",
+    "latest_volume_mm3",
+    "volume_change_percent",
+    "baseline_mean_hu",
+    "latest_mean_hu",
+    "density_change_hu",
+    "baseline_solid_component_percent",
+    "latest_solid_component_percent",
+    "latest_risk_score",
+    "latest_risk_level",
+    "latest_analysis_at",
+]
+
+
 RESEARCH_FIELDS = [
     "analysis_id",
     "patient_id",
@@ -125,6 +160,80 @@ def _format_contribution(contributions: list[Any], index: int) -> str:
     return f"{label}:{value}:{points}"
 
 
+def _ordered_measurements(nodule: Nodule) -> list[NoduleMeasurement]:
+    return sorted(nodule.measurements, key=lambda measurement: measurement.study.study_date if measurement.study else date.min)
+
+
+def _latest_analysis(patient: Patient) -> AnalysisResult | None:
+    if not patient.analyses:
+        return None
+    return max(patient.analyses, key=lambda analysis: analysis.created_at)
+
+
+def _percent_change(baseline: float | None, latest: float | None) -> float | None:
+    if baseline is None or latest is None or baseline == 0:
+        return None
+    return round(((latest - baseline) / baseline) * 100, 3)
+
+
+def _cohort_row(patient: Patient, nodule: Nodule | None) -> dict[str, Any]:
+    latest_analysis = _latest_analysis(patient)
+    if not nodule:
+        baseline_study_date, latest_study_date = _study_dates(patient)
+        return {
+            "patient_id": patient.id,
+            "patient_code": patient.patient_code,
+            "name": patient.name,
+            "sex": patient.sex,
+            "age": patient.age,
+            "smoking_history": patient.smoking_history,
+            "family_history": patient.family_history,
+            "primary_diagnosis": patient.primary_diagnosis,
+            "study_count": len(patient.studies),
+            "measurement_count": 0,
+            "baseline_study_date": baseline_study_date,
+            "latest_study_date": latest_study_date,
+            "latest_risk_score": latest_analysis.risk_score if latest_analysis else None,
+            "latest_risk_level": latest_analysis.risk_level if latest_analysis else None,
+            "latest_analysis_at": latest_analysis.created_at if latest_analysis else None,
+        }
+
+    measurements = _ordered_measurements(nodule)
+    baseline = measurements[0] if measurements else None
+    latest = measurements[-1] if measurements else None
+    return {
+        "patient_id": patient.id,
+        "patient_code": patient.patient_code,
+        "name": patient.name,
+        "sex": patient.sex,
+        "age": patient.age,
+        "smoking_history": patient.smoking_history,
+        "family_history": patient.family_history,
+        "primary_diagnosis": patient.primary_diagnosis,
+        "nodule_id": nodule.id,
+        "nodule_label": nodule.label,
+        "lobe": nodule.lobe,
+        "nodule_type": nodule.nodule_type,
+        "baseline_impression": nodule.baseline_impression,
+        "study_count": len(patient.studies),
+        "measurement_count": len(measurements),
+        "baseline_study_date": baseline.study.study_date if baseline else None,
+        "latest_study_date": latest.study.study_date if latest else None,
+        "baseline_diameter_mm": baseline.diameter_mm if baseline else None,
+        "latest_diameter_mm": latest.diameter_mm if latest else None,
+        "diameter_change_mm": round(latest.diameter_mm - baseline.diameter_mm, 3) if baseline and latest else None,
+        "baseline_volume_mm3": baseline.volume_mm3 if baseline else None,
+        "latest_volume_mm3": latest.volume_mm3 if latest else None,
+        "volume_change_percent": _percent_change(baseline.volume_mm3 if baseline else None, latest.volume_mm3 if latest else None),
+        "baseline_mean_hu": baseline.mean_hu if baseline else None,
+        "latest_mean_hu": latest.mean_hu if latest else None,
+        "density_change_hu": round(latest.mean_hu - baseline.mean_hu, 3) if baseline and latest else None,
+        "baseline_solid_component_percent": baseline.solid_component_percent if baseline else None,
+        "latest_solid_component_percent": latest.solid_component_percent if latest else None,
+        "latest_risk_score": latest_analysis.risk_score if latest_analysis else None,
+        "latest_risk_level": latest_analysis.risk_level if latest_analysis else None,
+        "latest_analysis_at": latest_analysis.created_at if latest_analysis else None,
+    }
 def _first_nodule(patient: Patient) -> Nodule | None:
     if not patient.nodules:
         return None
@@ -262,6 +371,31 @@ def export_research_table(patient_id: int | None = Query(default=None), db: Sess
                 "created_at": analysis.created_at,
             }
         )
-
     filename = f"patient-{patient_id}-research-table.csv" if patient_id else "research-table.csv"
     return _csv_response(filename, RESEARCH_FIELDS, rows)
+
+
+@router.get("/cohort-table.csv")
+def export_cohort_table(patient_id: int | None = Query(default=None), db: Session = Depends(get_db)) -> StreamingResponse:
+    query = (
+        db.query(Patient)
+        .options(
+            joinedload(Patient.studies),
+            joinedload(Patient.analyses),
+            joinedload(Patient.nodules).joinedload(Nodule.measurements).joinedload(NoduleMeasurement.study),
+        )
+        .order_by(Patient.patient_code)
+    )
+    if patient_id is not None:
+        query = query.filter(Patient.id == patient_id)
+
+    rows = []
+    for patient in query.all():
+        if patient.nodules:
+            for nodule in sorted(patient.nodules, key=lambda item: item.id):
+                rows.append(_cohort_row(patient, nodule))
+        else:
+            rows.append(_cohort_row(patient, None))
+
+    filename = f"patient-{patient_id}-cohort-table.csv" if patient_id else "cohort-table.csv"
+    return _csv_response(filename, COHORT_FIELDS, rows)

@@ -287,6 +287,10 @@ function buildDownloadUrl(path: string, patientId?: number | null) {
   return `${baseUrl}${path}${suffix}`;
 }
 
+export function cohortTableCsvUrl(patientId?: number | null) {
+  return buildDownloadUrl('/exports/cohort-table.csv', patientId);
+}
+
 export function researchTableCsvUrl(patientId?: number | null) {
   return buildDownloadUrl('/exports/research-table.csv', patientId);
 }
