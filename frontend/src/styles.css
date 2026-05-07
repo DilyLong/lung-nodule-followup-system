@@ -181,6 +181,21 @@ td svg { vertical-align: middle; }
 .model-status-chip.proxy { background: #dbeafe; color: #1d4ed8; }
 .model-status-chip.fallback { background: #fef3c7; color: #92400e; }
 
+.spec-section { display: grid; gap: 16px; margin-bottom: 18px; }
+.spec-section h2 { display: flex; align-items: center; gap: 8px; }
+.spec-kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.spec-kv-grid div, .spec-enum-list div { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px; }
+.spec-kv-grid span { display: block; color: #64748b; margin-bottom: 6px; }
+.spec-kv-grid strong { display: block; color: #0f172a; overflow-wrap: anywhere; }
+.spec-table-card tbody tr { cursor: default; }
+.spec-table-card tbody tr:hover { background: transparent; }
+.spec-tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.spec-tag { display: inline-flex; border-radius: 999px; background: #eff6ff; color: #1d4ed8; padding: 5px 8px; font-size: 12px; font-weight: 700; }
+.spec-enum-list { display: grid; gap: 10px; }
+.spec-enum-list strong { display: block; margin-bottom: 8px; }
+.spec-check-list { display: grid; gap: 10px; }
+.spec-check-list p { margin: 0; display: flex; align-items: flex-start; gap: 8px; color: #475569; }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media print {
