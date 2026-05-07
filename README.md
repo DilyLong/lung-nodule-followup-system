@@ -7,7 +7,7 @@
 第一版用于演示和继续开发：
 
 - 病例管理与临床工作台
-- 多期 CT 随访时间轴
+- 多结节管理与目标结节独立时序风险分析
 - 肺结节直径、体积、密度、实性成分等动态指标展示
 - 三维配准、时序特征、ConvLSTM 推理的可替换算法接口
 - AI 风险分层与个体化随访建议
@@ -61,11 +61,12 @@ npm run dev
 
 - 数据集规范：前端侧边栏“数据集规范”页面读取 `GET /imports/spec`，展示 DICOM 目录、CSV 文件、标签枚举和质控规则。
 - CSV 导入校验：在“影像上传”页上传 `patients.csv`、`studies.csv`、`nodules.csv`、`measurements.csv`，系统只做规范校验并返回报告，不写入数据库。
-- CSV 导出：总览页和病例详情页可下载 `cohort-table.csv`、`measurements.csv`、`research-table.csv`；其中 `cohort-table.csv` 不依赖 AI 分析结果。
+- CSV 导出：总览页和病例详情页可下载 `cohort-table.csv`、`measurements.csv`、`research-table.csv`；其中 `cohort-table.csv` 不依赖 AI 分析结果，并保留结节维度的最新风险评分。
 - 研究数据包：总览页和病例详情页可下载 `research-package.zip`，内含三张 CSV、`imports-spec.json`、`model-status.json` 和 `metadata.json`。
 - 模型 artifact：将 TorchScript `temporal_model.pt` 或 ONNX `temporal_model.onnx` 放入 `backend/model_artifacts/`；TorchScript 需要安装 `torch`，ONNX 需要安装 `onnxruntime`。
 - 模型状态：前端侧边栏“模型状态”页面读取 `GET /model/status`，显示权重文件、`torch` / `onnxruntime` 依赖和当前推理模式。
 - 模型自检：模型状态页可调用 `POST /model/self-check`，使用内置三期 synthetic temporal fixture 校验 `temporal-nodule-v1` 输入 schema，并执行真实模型或代理 fallback dry-run。
+- 多结节分析：病例详情页可选择目标结节运行 `POST /analysis/{patient_id}/run?nodule_id=...`，每次分析结果记录 `nodule_id`，便于临床展示和回顾性研究表按结节追踪。
 
 ## 后续扩展
 

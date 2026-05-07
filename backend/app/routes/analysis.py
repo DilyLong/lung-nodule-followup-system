@@ -12,7 +12,7 @@ router = APIRouter(prefix="/analysis", tags=["analysis"])
 
 
 @router.post("/{patient_id}/run", response_model=AnalysisRead)
-def run_analysis(patient_id: int, db: Session = Depends(get_db)) -> AnalysisResult:
+def run_analysis(patient_id: int, nodule_id: int | None = None, db: Session = Depends(get_db)) -> AnalysisResult:
     patient = (
         db.query(Patient)
         .options(
@@ -29,7 +29,7 @@ def run_analysis(patient_id: int, db: Session = Depends(get_db)) -> AnalysisResu
         raise HTTPException(status_code=400, detail="At least two CT studies are required for temporal analysis")
 
     try:
-        result = run_patient_analysis(patient)
+        result = run_patient_analysis(patient, nodule_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -41,13 +41,11 @@ def run_analysis(patient_id: int, db: Session = Depends(get_db)) -> AnalysisResu
 
 
 @router.get("/{patient_id}/latest", response_model=AnalysisRead | None)
-def latest_analysis(patient_id: int, db: Session = Depends(get_db)) -> AnalysisResult | None:
-    return (
-        db.query(AnalysisResult)
-        .filter(AnalysisResult.patient_id == patient_id)
-        .order_by(AnalysisResult.created_at.desc())
-        .first()
-    )
+def latest_analysis(patient_id: int, nodule_id: int | None = None, db: Session = Depends(get_db)) -> AnalysisResult | None:
+    query = db.query(AnalysisResult).filter(AnalysisResult.patient_id == patient_id)
+    if nodule_id is not None:
+        query = query.filter(AnalysisResult.nodule_id == nodule_id)
+    return query.order_by(AnalysisResult.created_at.desc()).first()
 
 
 @router.get("/{analysis_id}/features")

@@ -8,7 +8,19 @@ from .recommendation import recommend_followup
 from .registration import register_studies
 
 
-def run_patient_analysis(patient: Any) -> dict[str, Any]:
+def _select_nodule(patient: Any, nodule_id: int | None) -> Any:
+    ordered = sorted(patient.nodules, key=lambda item: item.id)
+    if not ordered:
+        raise ValueError("patient has no nodule")
+    if nodule_id is None:
+        return ordered[0]
+    for nodule in ordered:
+        if nodule.id == nodule_id:
+            return nodule
+    raise ValueError("nodule does not belong to this patient")
+
+
+def run_patient_analysis(patient: Any, nodule_id: int | None = None) -> dict[str, Any]:
     studies = [
         {
             "id": study.id,
@@ -28,10 +40,8 @@ def run_patient_analysis(patient: Any) -> dict[str, Any]:
         }
         for study in sorted(patient.studies, key=lambda item: item.study_date)
     ]
-    if not patient.nodules:
-        raise ValueError("patient has no nodule")
 
-    nodule = patient.nodules[0]
+    nodule = _select_nodule(patient, nodule_id)
     measurements = []
     study_by_id = {study.id: study for study in patient.studies}
     for measurement in nodule.measurements:
@@ -52,6 +62,8 @@ def run_patient_analysis(patient: Any) -> dict[str, Any]:
                 "pleural_retraction_score": measurement.pleural_retraction_score,
             }
         )
+    if len(measurements) < 2:
+        raise ValueError("selected nodule requires at least two temporal measurements")
 
     preprocessing = preprocess_patient_studies(studies)
     registration = register_studies(studies)
@@ -62,11 +74,18 @@ def run_patient_analysis(patient: Any) -> dict[str, Any]:
     feature_payload = {
         "preprocessing": preprocessing,
         "registration": registration,
+        "nodule": {
+            "id": nodule.id,
+            "label": nodule.label,
+            "lobe": nodule.lobe,
+            "nodule_type": nodule.nodule_type,
+        },
         "features": features,
         "risk": risk,
     }
 
     return {
+        "nodule_id": nodule.id,
         "risk_score": risk["risk_score"],
         "risk_level": risk["risk_level"],
         "registration_quality": registration["registration_quality"],

@@ -120,6 +120,7 @@ class AnalysisResult(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
+    nodule_id: Mapped[int | None] = mapped_column(ForeignKey("nodules.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     risk_score: Mapped[float] = mapped_column(Float)
     risk_level: Mapped[str] = mapped_column(String(32))

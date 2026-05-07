@@ -1,25 +1,25 @@
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import type { Study } from '../lib/api';
+import type { Measurement } from '../lib/api';
 
 interface Props {
-  studies: Study[];
+  measurements: Measurement[];
 }
 
-export default function RiskTrendChart({ studies }: Props) {
-  const data = studies.map((study, index) => {
-    const m = study.measurements[0];
-    return {
-      date: study.study_date,
-      diameter: m?.diameter_mm ?? 0,
-      volume: m?.volume_mm3 ?? 0,
-      solid: m?.solid_component_percent ?? 0,
-      index: `T${index + 1}`,
-    };
-  });
+export default function RiskTrendChart({ measurements }: Props) {
+  const data = measurements.map((measurement, index) => ({
+    diameter: measurement.diameter_mm,
+    volume: measurement.volume_mm3,
+    solid: measurement.solid_component_percent,
+    index: `T${index + 1}`,
+  }));
+
+  if (data.length === 0) {
+    return <p className="empty compact">当前结节暂无动态测量曲线。</p>;
+  }
 
   return (
     <div className="chart-card">
-      <h3>结节动态变化曲线</h3>
+      <h3>目标结节动态变化曲线</h3>
       <ResponsiveContainer width="100%" height={260}>
         <AreaChart data={data}>
           <CartesianGrid strokeDasharray="3 3" />

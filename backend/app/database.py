@@ -31,6 +31,10 @@ def migrate_sqlite_schema() -> None:
             for name in ("min_hu", "max_hu", "roi_area_mm2"):
                 if name not in columns:
                     conn.execute(text(f"ALTER TABLE nodule_measurements ADD COLUMN {name} FLOAT"))
+        if "analysis_results" in tables:
+            columns = [row[1] for row in conn.execute(text("PRAGMA table_info(analysis_results)"))]
+            if "nodule_id" not in columns:
+                conn.execute(text("ALTER TABLE analysis_results ADD COLUMN nodule_id INTEGER"))
 
 
 def get_db() -> Generator[Session, None, None]:

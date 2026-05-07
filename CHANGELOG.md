@@ -10,3 +10,4 @@
 - 新增 CSV 数据集导入前校验功能，可上传 `patients.csv`、`studies.csv`、`nodules.csv`、`measurements.csv`，在不写入数据库的前提下检查必填字段、枚举、日期、数值和跨表关联，并在前端展示校验报告。
 - 新增研究数据包 ZIP 一键导出，打包基础队列表、测量表、分析研究表、数据集规范、模型状态和 metadata，支持全队列与单病例导出。
 - 新增模型接入自检 / dry-run 功能，使用内置三期 synthetic temporal fixture 校验输入 schema，并验证真实模型或代理 fallback 推理链路。
+- 新增多结节独立时序分析能力，病例详情页可选择目标结节运行风险评分，分析结果记录 `nodule_id`，研究导出按结节维度关联最新风险。

@@ -21,12 +21,8 @@ function parseModelStatus(analysis?: Analysis) {
   }
 }
 
-function modelStatusLabel(status: string | null) {
-  if (!status) return '模型未记录';
-  if (status.startsWith('real_')) return '真实模型';
-  if (status.startsWith('fallback_')) return 'Fallback 代理模型';
-  if (status === 'surrogate_no_weights') return '代理模型';
-  return status;
+function sortedMeasurements(nodule?: Nodule) {
+  return [...(nodule?.measurements ?? [])].sort((a, b) => a.study_id - b.study_id);
 }
 
 interface Props {
@@ -56,13 +52,16 @@ export default function PatientDetail({ patientId, setPage }: Props) {
     }
   }, [patient, selectedNoduleId]);
 
-  const latestAnalysis: Analysis | undefined = useMemo(() => {
-    return patient?.analyses.at(-1);
-  }, [patient]);
-
   const nodule = patient?.nodules.find((item) => item.id === selectedNoduleId) ?? patient?.nodules[0];
-  const firstMeasurement = patient?.studies[0]?.measurements[0];
-  const latestMeasurement = patient?.studies.at(-1)?.measurements[0];
+  const noduleMeasurements = useMemo(() => sortedMeasurements(nodule), [nodule]);
+  const firstMeasurement = noduleMeasurements[0];
+  const latestMeasurement = noduleMeasurements.at(-1);
+  const latestAnalysis: Analysis | undefined = useMemo(() => {
+    const exactAnalyses = patient?.analyses.filter((analysis) => analysis.nodule_id === nodule?.id) ?? [];
+    if (exactAnalyses.length > 0) return exactAnalyses.at(-1);
+    const legacyAnalyses = patient?.analyses.filter((analysis) => analysis.nodule_id == null) ?? [];
+    return legacyAnalyses.at(-1);
+  }, [patient, nodule]);
   const modelStatus = parseModelStatus(latestAnalysis);
 
   function handleNoduleCreated(nodule: Nodule) {
@@ -73,7 +72,7 @@ export default function PatientDetail({ patientId, setPage }: Props) {
   async function handleRunAnalysis() {
     setRunning(true);
     try {
-      await runAnalysis(patientId);
+      await runAnalysis(patientId, selectedNoduleId);
       await loadPatient();
     } finally {
       setRunning(false);
@@ -109,8 +108,8 @@ export default function PatientDetail({ patientId, setPage }: Props) {
           <a className="ghost" href={researchTableCsvUrl(patient.id)}><Download size={17} /> 导出本病例研究表</a>
           <a className="ghost" href={measurementsCsvUrl(patient.id)}><Download size={17} /> 导出本病例测量表</a>
           <button className="ghost" onClick={() => setPage({ name: 'upload', patientId })}><Upload size={17} /> 上传检查</button>
-          <button className="primary" onClick={handleRunAnalysis} disabled={running}>
-            {running ? <RefreshCw size={17} className="spin" /> : <PlayCircle size={17} />} 运行时序分析
+          <button className="primary" onClick={handleRunAnalysis} disabled={running || !selectedNoduleId}>
+            {running ? <RefreshCw size={17} className="spin" /> : <PlayCircle size={17} />} 运行目标结节分析
           </button>
         </div>
       </header>
@@ -135,7 +134,7 @@ export default function PatientDetail({ patientId, setPage }: Props) {
           <h2>目标结节</h2>
           <p className="large-text">{nodule?.nodule_type}</p>
           <p>{nodule?.lobe}</p>
-          <span>{nodule?.baseline_impression}</span>
+          <span>{nodule ? `${nodule.label} · ${nodule.baseline_impression}` : '暂无目标结节'}</span>
         </div>
       </section>
 
@@ -144,14 +143,14 @@ export default function PatientDetail({ patientId, setPage }: Props) {
         <NoduleMetrics title="最近一次" measurement={latestMeasurement} />
         <div className="metric-card accent">
           <span>AI 风险分层</span>
-          <strong>{latestAnalysis?.risk_level ?? '待分析'}</strong>
-          <p>{latestAnalysis ? `风险评分 ${latestAnalysis.risk_score.toFixed(2)}，配准质量 ${latestAnalysis.registration_quality.toFixed(2)}` : '点击运行时序分析后生成风险评分。'}</p>
-          {latestAnalysis && <span className={`model-status-chip ${modelStatus?.startsWith('real_') ? 'real' : modelStatus?.startsWith('fallback_') ? 'fallback' : 'proxy'}`}>{modelStatusLabel(modelStatus)}</span>}
+          <strong>{latestAnalysis?.risk_level ?? '该结节待分析'}</strong>
+          <p>{latestAnalysis ? `目标结节风险评分 ${latestAnalysis.risk_score.toFixed(2)}，配准质量 ${latestAnalysis.registration_quality.toFixed(2)}` : '选择目标结节并运行分析后生成独立风险评分。'}</p>
+          {latestAnalysis && <span className={`model-status-chip ${modelStatus?.startsWith('real_') ? 'real' : modelStatus?.startsWith('fallback_') ? 'fallback' : 'proxy'}`}>{modelStatus ?? '模型未记录'}</span>}
         </div>
       </section>
 
       <section className="detail-grid">
-        <div className="panel wide"><RiskTrendChart studies={patient.studies} /></div>
+        <div className="panel wide"><RiskTrendChart measurements={noduleMeasurements} /></div>
         <div className="panel">
           <h2>AI 时序模型解释</h2>
           <ModelExplanationPanel analysis={latestAnalysis} />

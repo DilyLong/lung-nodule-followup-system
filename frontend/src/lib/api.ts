@@ -107,6 +107,7 @@ export interface Nodule {
 export interface Analysis {
   id: number;
   patient_id: number;
+  nodule_id: number | null;
   created_at: string;
   risk_score: number;
   risk_level: string;
@@ -166,8 +167,9 @@ export async function fetchPatient(id: number) {
   return data;
 }
 
-export async function runAnalysis(patientId: number) {
-  const { data } = await api.post<Analysis>(`/analysis/${patientId}/run`);
+export async function runAnalysis(patientId: number, noduleId?: number | null) {
+  const suffix = noduleId ? `?nodule_id=${noduleId}` : '';
+  const { data } = await api.post<Analysis>(`/analysis/${patientId}/run${suffix}`);
   return data;
 }
 

@@ -78,6 +78,7 @@ class AnalysisRead(BaseModel):
 
     id: int
     patient_id: int
+    nodule_id: int | None = None
     created_at: datetime
     risk_score: float
     risk_level: str

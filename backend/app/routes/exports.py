@@ -171,10 +171,19 @@ def _ordered_measurements(nodule: Nodule) -> list[NoduleMeasurement]:
     return sorted(nodule.measurements, key=lambda measurement: measurement.study.study_date if measurement.study else date.min)
 
 
-def _latest_analysis(patient: Patient) -> AnalysisResult | None:
-    if not patient.analyses:
+def _latest_analysis(patient: Patient, nodule: Nodule | None = None) -> AnalysisResult | None:
+    analyses = list(patient.analyses)
+    if nodule is not None:
+        nodule_analyses = [analysis for analysis in analyses if analysis.nodule_id == nodule.id]
+        if nodule_analyses:
+            return max(nodule_analyses, key=lambda analysis: analysis.created_at)
+        legacy = [analysis for analysis in analyses if analysis.nodule_id is None]
+        if legacy:
+            return max(legacy, key=lambda analysis: analysis.created_at)
         return None
-    return max(patient.analyses, key=lambda analysis: analysis.created_at)
+    if not analyses:
+        return None
+    return max(analyses, key=lambda analysis: analysis.created_at)
 
 
 def _percent_change(baseline: float | None, latest: float | None) -> float | None:
@@ -184,7 +193,7 @@ def _percent_change(baseline: float | None, latest: float | None) -> float | Non
 
 
 def _cohort_row(patient: Patient, nodule: Nodule | None) -> dict[str, Any]:
-    latest_analysis = _latest_analysis(patient)
+    latest_analysis = _latest_analysis(patient, nodule)
     if not nodule:
         baseline_study_date, latest_study_date = _study_dates(patient)
         return {
@@ -307,6 +316,20 @@ def export_measurements(patient_id: int | None = Query(default=None), db: Sessio
     return _csv_response(filename, MEASUREMENT_FIELDS, rows)
 
 
+def _nodule_from_analysis(patient: Patient, analysis: AnalysisResult, payload: dict[str, Any]) -> Nodule | None:
+    if analysis.nodule_id is not None:
+        for nodule in patient.nodules:
+            if nodule.id == analysis.nodule_id:
+                return nodule
+    payload_nodule = payload.get("nodule") if isinstance(payload.get("nodule"), dict) else {}
+    payload_nodule_id = payload_nodule.get("id")
+    if payload_nodule_id is not None:
+        for nodule in patient.nodules:
+            if nodule.id == payload_nodule_id:
+                return nodule
+    return _first_nodule(patient)
+
+
 def _build_research_rows(db: Session, patient_id: int | None = None) -> list[dict[str, Any]]:
     query = (
         db.query(AnalysisResult)
@@ -323,9 +346,9 @@ def _build_research_rows(db: Session, patient_id: int | None = None) -> list[dic
     rows = []
     for analysis in query.all():
         patient = analysis.patient
-        nodule = _first_nodule(patient)
-        baseline_study_date, latest_study_date = _study_dates(patient)
         payload = _parse_features(analysis.features_json)
+        nodule = _nodule_from_analysis(patient, analysis, payload)
+        baseline_study_date, latest_study_date = _study_dates(patient)
         features = payload.get("features") if isinstance(payload.get("features"), dict) else {}
         risk = payload.get("risk") if isinstance(payload.get("risk"), dict) else {}
         registration = payload.get("registration") if isinstance(payload.get("registration"), dict) else {}
