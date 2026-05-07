@@ -155,6 +155,17 @@ export interface Report {
   created_at: string;
   title: string;
   content_markdown: string;
+  doctor_opinion: string;
+  followup_plan: string;
+  status: 'draft' | 'final' | string;
+  finalized_at: string | null;
+}
+
+export interface ReportUpdatePayload {
+  content_markdown: string;
+  doctor_opinion: string;
+  followup_plan: string;
+  status: 'draft' | 'final';
 }
 
 export async function fetchPatients() {
@@ -175,6 +186,11 @@ export async function runAnalysis(patientId: number, noduleId?: number | null) {
 
 export async function createReport(analysisId: number) {
   const { data } = await api.post<Report>(`/reports/${analysisId}`);
+  return data;
+}
+
+export async function updateReport(reportId: number, payload: ReportUpdatePayload) {
+  const { data } = await api.put<Report>(`/reports/${reportId}`, payload);
   return data;
 }
 

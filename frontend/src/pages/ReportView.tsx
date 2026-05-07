@@ -1,7 +1,7 @@
-import { ArrowLeft, Copy, Download, Printer } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { ArrowLeft, CheckCircle, Copy, Download, Printer, Save } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Page } from '../App';
-import { fetchLatestReport, type Report } from '../lib/api';
+import { fetchLatestReport, updateReport, type Report } from '../lib/api';
 
 interface Props {
   patientId: number;
@@ -161,7 +161,11 @@ function markdownToHtml(markdown: string) {
   return chunks.join('\n');
 }
 
-function buildWordDocument(report: Report) {
+function finalMarkdown(contentMarkdown: string, doctorOpinion: string, followupPlan: string) {
+  return `${contentMarkdown.trim()}\n\n## 医生编辑确认\n\n- 医生意见：${doctorOpinion.trim() || '未填写'}\n- 确认随访建议：${followupPlan.trim() || '未填写'}\n`;
+}
+
+function buildWordDocument(report: Report, contentMarkdown: string, doctorOpinion: string, followupPlan: string) {
   return `<!doctype html>
 <html>
 <head>
@@ -178,7 +182,7 @@ function buildWordDocument(report: Report) {
   </style>
 </head>
 <body>
-${markdownToHtml(report.content_markdown)}
+${markdownToHtml(finalMarkdown(contentMarkdown, doctorOpinion, followupPlan))}
 </body>
 </html>`;
 }
@@ -187,15 +191,53 @@ function reportFileName(report: Report) {
   return `${report.title}-${report.id}`.replace(/[\\/:*?"<>|]/g, '-');
 }
 
+function statusText(report: Report) {
+  if (report.status === 'final') return `最终版${report.finalized_at ? ` · ${new Date(report.finalized_at).toLocaleString()}` : ''}`;
+  return '草稿，可继续编辑';
+}
+
 export default function ReportView({ patientId, setPage }: Props) {
   const [report, setReport] = useState<Report | null>(null);
+  const [contentMarkdown, setContentMarkdown] = useState('');
+  const [doctorOpinion, setDoctorOpinion] = useState('');
+  const [followupPlan, setFollowupPlan] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
-    fetchLatestReport(patientId).then(setReport);
+    fetchLatestReport(patientId).then((nextReport) => {
+      setReport(nextReport);
+      setContentMarkdown(nextReport?.content_markdown ?? '');
+      setDoctorOpinion(nextReport?.doctor_opinion ?? '');
+      setFollowupPlan(nextReport?.followup_plan ?? '');
+    });
   }, [patientId]);
 
+  const previewMarkdown = useMemo(() => finalMarkdown(contentMarkdown, doctorOpinion, followupPlan), [contentMarkdown, doctorOpinion, followupPlan]);
+
+  async function saveReport(status: 'draft' | 'final') {
+    if (!report) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      const updated = await updateReport(report.id, {
+        content_markdown: contentMarkdown,
+        doctor_opinion: doctorOpinion,
+        followup_plan: followupPlan,
+        status,
+      });
+      setReport(updated);
+      setContentMarkdown(updated.content_markdown);
+      setDoctorOpinion(updated.doctor_opinion);
+      setFollowupPlan(updated.followup_plan);
+      setMessage(status === 'final' ? '已确认最终版报告。' : '草稿已保存。');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function copyReport() {
-    if (report) await navigator.clipboard.writeText(report.content_markdown);
+    if (report) await navigator.clipboard.writeText(previewMarkdown);
   }
 
   function printReport() {
@@ -204,7 +246,7 @@ export default function ReportView({ patientId, setPage }: Props) {
 
   function downloadWord() {
     if (!report) return;
-    const blob = new Blob([buildWordDocument(report)], { type: 'application/msword;charset=utf-8' });
+    const blob = new Blob([buildWordDocument(report, contentMarkdown, doctorOpinion, followupPlan)], { type: 'application/msword;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -219,18 +261,48 @@ export default function ReportView({ patientId, setPage }: Props) {
         <div>
           <p className="eyebrow">Structured report</p>
           <h1>结构化随访报告</h1>
-          <span>可复制 Markdown，也可直接打印保存 PDF 或下载 Word 兼容文档。</span>
+          <span>可编辑报告正文、医生意见和随访建议，保存草稿或确认最终版。</span>
         </div>
         <div className="button-row report-actions">
           <button className="ghost" onClick={() => setPage({ name: 'patient', patientId })}><ArrowLeft size={17} /> 返回病例</button>
           <button className="ghost" onClick={printReport} disabled={!report}><Printer size={17} /> 打印/保存 PDF</button>
           <button className="ghost" onClick={downloadWord} disabled={!report}><Download size={17} /> 下载 Word</button>
-          <button className="primary" onClick={copyReport} disabled={!report}><Copy size={17} /> 复制 Markdown</button>
+          <button className="ghost" onClick={copyReport} disabled={!report}><Copy size={17} /> 复制 Markdown</button>
         </div>
       </header>
 
+      {report && (
+        <section className="panel report-editor report-page-header">
+          <div className="report-editor-header">
+            <div>
+              <h2>医生编辑确认</h2>
+              <span className={`model-status-chip ${report.status === 'final' ? 'real' : 'fallback'}`}>{statusText(report)}</span>
+            </div>
+            <div className="button-row">
+              <button className="ghost" onClick={() => saveReport('draft')} disabled={saving}><Save size={17} /> 保存草稿</button>
+              <button className="primary" onClick={() => saveReport('final')} disabled={saving}><CheckCircle size={17} /> 确认最终版</button>
+            </div>
+          </div>
+          {message && <p className="success-banner compact">{message}</p>}
+          <label>
+            报告正文 Markdown
+            <textarea value={contentMarkdown} onChange={(event) => setContentMarkdown(event.target.value)} rows={16} />
+          </label>
+          <div className="report-editor-grid">
+            <label>
+              医生意见
+              <textarea value={doctorOpinion} onChange={(event) => setDoctorOpinion(event.target.value)} rows={5} placeholder="填写影像判断、临床解释或需补充的检查意见" />
+            </label>
+            <label>
+              医生确认随访建议
+              <textarea value={followupPlan} onChange={(event) => setFollowupPlan(event.target.value)} rows={5} placeholder="填写或修改复查时间、MDT/手术/穿刺建议" />
+            </label>
+          </div>
+        </section>
+      )}
+
       <section className="report-paper">
-        {report ? <article className="report-document">{renderMarkdown(report.content_markdown)}</article> : <p className="empty">暂无报告，请先在病例详情页运行分析并生成报告。</p>}
+        {report ? <article className="report-document">{renderMarkdown(previewMarkdown)}</article> : <p className="empty">暂无报告，请先在病例详情页运行分析并生成报告。</p>}
       </section>
     </div>
   );

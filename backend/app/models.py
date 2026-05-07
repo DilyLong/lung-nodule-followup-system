@@ -144,5 +144,9 @@ class Report(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     title: Mapped[str] = mapped_column(String(128))
     content_markdown: Mapped[str] = mapped_column(Text)
+    doctor_opinion: Mapped[str] = mapped_column(Text, default="")
+    followup_plan: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     patient: Mapped[Patient] = relationship(back_populates="reports")

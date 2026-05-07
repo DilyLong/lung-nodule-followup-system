@@ -1,11 +1,12 @@
 import json
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
 from ..models import AnalysisResult, Nodule, Patient, Report, Study
-from ..schemas import ReportRead
+from ..schemas import ReportRead, ReportUpdate
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -40,8 +41,26 @@ def _model_explanation_markdown(analysis: AnalysisResult) -> str:
 """
 
 
+def _target_nodule(patient: Patient, analysis: AnalysisResult) -> Nodule | None:
+    if analysis.nodule_id is not None:
+        for nodule in patient.nodules:
+            if nodule.id == analysis.nodule_id:
+                return nodule
+    try:
+        payload = json.loads(analysis.features_json)
+    except json.JSONDecodeError:
+        payload = {}
+    nodule_payload = payload.get("nodule") if isinstance(payload.get("nodule"), dict) else {}
+    nodule_id = nodule_payload.get("id")
+    if nodule_id is not None:
+        for nodule in patient.nodules:
+            if nodule.id == nodule_id:
+                return nodule
+    return patient.nodules[0] if patient.nodules else None
+
+
 def build_report_markdown(patient: Patient, analysis: AnalysisResult) -> str:
-    nodule = patient.nodules[0] if patient.nodules else None
+    nodule = _target_nodule(patient, analysis)
     studies = sorted(patient.studies, key=lambda item: item.study_date)
     study_rows = []
     if nodule:
@@ -93,12 +112,6 @@ def build_report_markdown(patient: Patient, analysis: AnalysisResult) -> str:
 
 {analysis.recommendation}
 
-## 医生确认
-
-- 医生意见：____________________________________
-- 建议复查时间：________________________________
-- 签名：________________________________________
-
 本报告由本地演示版系统自动生成，仅作为临床辅助决策参考，最终诊疗意见需由医生结合完整病史、影像和指南确认。
 """
 
@@ -126,8 +139,28 @@ def create_report(analysis_id: int, db: Session = Depends(get_db)) -> Report:
         analysis_id=analysis.id,
         title="肺结节多期 CT 智能随访报告",
         content_markdown=build_report_markdown(patient, analysis),
+        doctor_opinion="",
+        followup_plan=analysis.recommendation,
+        status="draft",
     )
     db.add(report)
+    db.commit()
+    db.refresh(report)
+    return report
+
+
+@router.put("/{report_id}", response_model=ReportRead)
+def update_report(report_id: int, payload: ReportUpdate, db: Session = Depends(get_db)) -> Report:
+    report = db.get(Report, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if payload.status not in {"draft", "final"}:
+        raise HTTPException(status_code=400, detail="status must be draft or final")
+    report.content_markdown = payload.content_markdown
+    report.doctor_opinion = payload.doctor_opinion
+    report.followup_plan = payload.followup_plan
+    report.status = payload.status
+    report.finalized_at = datetime.utcnow() if payload.status == "final" else None
     db.commit()
     db.refresh(report)
     return report

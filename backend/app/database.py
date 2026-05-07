@@ -35,6 +35,17 @@ def migrate_sqlite_schema() -> None:
             columns = [row[1] for row in conn.execute(text("PRAGMA table_info(analysis_results)"))]
             if "nodule_id" not in columns:
                 conn.execute(text("ALTER TABLE analysis_results ADD COLUMN nodule_id INTEGER"))
+        if "reports" in tables:
+            columns = [row[1] for row in conn.execute(text("PRAGMA table_info(reports)"))]
+            report_columns = {
+                "doctor_opinion": "TEXT DEFAULT ''",
+                "followup_plan": "TEXT DEFAULT ''",
+                "status": "VARCHAR(32) DEFAULT 'draft'",
+                "finalized_at": "DATETIME",
+            }
+            for name, definition in report_columns.items():
+                if name not in columns:
+                    conn.execute(text(f"ALTER TABLE reports ADD COLUMN {name} {definition}"))
 
 
 def get_db() -> Generator[Session, None, None]:

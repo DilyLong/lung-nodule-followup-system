@@ -134,6 +134,17 @@ class ReportRead(BaseModel):
     created_at: datetime
     title: str
     content_markdown: str
+    doctor_opinion: str = ""
+    followup_plan: str = ""
+    status: str = "draft"
+    finalized_at: datetime | None = None
+
+
+class ReportUpdate(BaseModel):
+    content_markdown: str
+    doctor_opinion: str = ""
+    followup_plan: str = ""
+    status: str = "draft"
 
 
 class NoduleAnnotationRead(BaseModel):
