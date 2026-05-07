@@ -1,7 +1,8 @@
-import { Activity, Database, FileText, FolderTree, Upload } from 'lucide-react';
+import { Activity, BrainCircuit, Database, FileText, FolderTree, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import Dashboard from './pages/Dashboard';
 import DatasetSpecification from './pages/DatasetSpecification';
+import ModelStatusPage from './pages/ModelStatusPage';
 import PatientDetail from './pages/PatientDetail';
 import ReportView from './pages/ReportView';
 import UploadStudy from './pages/UploadStudy';
@@ -11,6 +12,7 @@ export type Page =
   | { name: 'patient'; patientId: number }
   | { name: 'upload'; patientId?: number }
   | { name: 'datasetSpec' }
+  | { name: 'modelStatus' }
   | { name: 'report'; patientId: number };
 
 export default function App() {
@@ -40,6 +42,9 @@ export default function App() {
           <button className={page.name === 'datasetSpec' ? 'active' : ''} onClick={() => setPage({ name: 'datasetSpec' })}>
             <FolderTree size={18} /> 数据集规范
           </button>
+          <button className={page.name === 'modelStatus' ? 'active' : ''} onClick={() => setPage({ name: 'modelStatus' })}>
+            <BrainCircuit size={18} /> 模型状态
+          </button>
           <button disabled>
             <FileText size={18} /> 结构化报告
           </button>
@@ -53,6 +58,7 @@ export default function App() {
         {page.name === 'patient' && <PatientDetail patientId={page.patientId} setPage={setPage} />}
         {page.name === 'upload' && <UploadStudy patientId={page.patientId} setPage={setPage} />}
         {page.name === 'datasetSpec' && <DatasetSpecification setPage={setPage} />}
+        {page.name === 'modelStatus' && <ModelStatusPage setPage={setPage} />}
         {page.name === 'report' && <ReportView patientId={page.patientId} setPage={setPage} />}
       </main>
     </div>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -348,6 +349,67 @@ def _artifact_model() -> tuple[Path, TemporalProgressionModel] | None:
     return None
 
 
+def _dependency_available(module_name: str) -> bool:
+    return importlib.util.find_spec(module_name) is not None
+
+
+def model_runtime_status() -> dict[str, Any]:
+    torch_exists = TORCH_ARTIFACT.exists()
+    onnx_exists = ONNX_ARTIFACT.exists()
+    torch_available = _dependency_available("torch")
+    onnxruntime_available = _dependency_available("onnxruntime")
+    if torch_exists and torch_available:
+        active_mode = "real_torch_ready"
+        active_backend = "pytorch"
+    elif onnx_exists and onnxruntime_available:
+        active_mode = "real_onnx_ready"
+        active_backend = "onnxruntime"
+    elif torch_exists and not torch_available:
+        active_mode = "fallback_missing_dependency"
+        active_backend = "deterministic_surrogate"
+    elif onnx_exists and not onnxruntime_available:
+        active_mode = "fallback_missing_dependency"
+        active_backend = "deterministic_surrogate"
+    else:
+        active_mode = "surrogate_no_weights"
+        active_backend = "deterministic_surrogate"
+
+    return {
+        "artifact_dir": str(ARTIFACT_DIR),
+        "input_schema_version": INPUT_SCHEMA_VERSION,
+        "surrogate_model_version": MODEL_VERSION,
+        "active_mode": active_mode,
+        "active_backend": active_backend,
+        "artifacts": [
+            {
+                "name": TORCH_ARTIFACT.name,
+                "path": str(TORCH_ARTIFACT),
+                "format": "TorchScript .pt",
+                "exists": torch_exists,
+                "dependency": "torch",
+                "dependency_available": torch_available,
+                "status": "ready" if torch_exists and torch_available else "missing_dependency" if torch_exists else "missing",
+            },
+            {
+                "name": ONNX_ARTIFACT.name,
+                "path": str(ONNX_ARTIFACT),
+                "format": "ONNX .onnx",
+                "exists": onnx_exists,
+                "dependency": "onnxruntime",
+                "dependency_available": onnxruntime_available,
+                "status": "ready" if onnx_exists and onnxruntime_available else "missing_dependency" if onnx_exists else "missing",
+            },
+        ],
+        "dependencies": {
+            "torch": torch_available,
+            "onnxruntime": onnxruntime_available,
+        },
+        "fallback_model": {
+            "name": TemporalSurrogateModel.model_name,
+            "backend": TemporalSurrogateModel.backend,
+            "status": "available",
+        },
+    }
 def predict_progression_risk(features: dict[str, Any], nodule_type: str, age: int, smoking_history: str) -> dict[str, Any]:
     model_input = build_temporal_model_input(features, nodule_type, age, smoking_history)
     try:

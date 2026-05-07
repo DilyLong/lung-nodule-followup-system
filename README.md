@@ -12,6 +12,9 @@
 - 三维配准、时序特征、ConvLSTM 推理的可替换算法接口
 - AI 风险分层与个体化随访建议
 - 结构化随访报告生成
+- 数据集规范页面，展示真实 DICOM 多期目录、CSV 字段、标签枚举和质控规则
+- 研究导出：基础队列表、测量表、分析研究表 CSV
+- 模型接入状态页，检查 `.pt` / `.onnx` 权重、推理依赖和当前真实/代理模型模式
 
 当前暂无真实 CT 数据，因此系统内置模拟病例和模拟影像指标。后续可把 `backend/app/pipeline` 中的占位实现替换为真实 DICOM 读取、三维配准和 PyTorch 模型。
 
@@ -54,10 +57,16 @@ npm run dev
 4. 点击“运行时序分析”。
 5. 查看 AI 风险评分、个性化随访建议和结构化报告。
 
+## 真实数据与模型接入准备
+
+- 数据集规范：前端侧边栏“数据集规范”页面读取 `GET /imports/spec`，展示 DICOM 目录、CSV 文件、标签枚举和质控规则。
+- CSV 导出：总览页和病例详情页可下载 `cohort-table.csv`、`measurements.csv`、`research-table.csv`；其中 `cohort-table.csv` 不依赖 AI 分析结果。
+- 模型 artifact：将 TorchScript `temporal_model.pt` 或 ONNX `temporal_model.onnx` 放入 `backend/model_artifacts/`。
+- 模型状态：前端侧边栏“模型状态”页面读取 `GET /model/status`，显示权重文件、`torch` / `onnxruntime` 依赖和当前推理模式。
+
 ## 后续扩展
 
 - DICOM/NIfTI 真实读取：替换 `pipeline/preprocess.py`
-- 刚性/非刚性三维配准：替换 `pipeline/registration.py`
 - 结节分割与影像组学：扩展 `pipeline/features.py`
 - ConvLSTM 模型训练与推理：替换 `pipeline/model.py`
 - PDF/Word 报告导出：扩展 `routes/reports.py`

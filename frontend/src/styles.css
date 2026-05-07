@@ -196,6 +196,9 @@ td svg { vertical-align: middle; }
 .spec-check-list { display: grid; gap: 10px; }
 .spec-check-list p { margin: 0; display: flex; align-items: flex-start; gap: 8px; color: #475569; }
 
+.dependency-ok { color: #166534; display: inline-flex; align-items: center; gap: 6px; font-weight: 800; }
+.dependency-missing { color: #b91c1c; display: inline-flex; align-items: center; gap: 6px; font-weight: 800; }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media print {

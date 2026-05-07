@@ -304,6 +304,36 @@ export async function fetchImportSpec() {
   return data;
 }
 
+export interface ModelArtifactStatus {
+  name: string;
+  path: string;
+  format: string;
+  exists: boolean;
+  dependency: string;
+  dependency_available: boolean;
+  status: string;
+}
+
+export interface ModelRuntimeStatus {
+  artifact_dir: string;
+  input_schema_version: string;
+  surrogate_model_version: string;
+  active_mode: string;
+  active_backend: string;
+  artifacts: ModelArtifactStatus[];
+  dependencies: Record<string, boolean>;
+  fallback_model: {
+    name: string;
+    backend: string;
+    status: string;
+  };
+}
+
+export async function fetchModelRuntimeStatus() {
+  const { data } = await api.get<ModelRuntimeStatus>('/model/status');
+  return data;
+}
+
 export function sliceImageUrl(sliceId: number) {
   return `${api.defaults.baseURL}/imaging/slices/${sliceId}/image`;
 }
