@@ -220,8 +220,39 @@ class StudyImageSeries(BaseModel):
     slices: list[ImageSliceRead]
 
 
+
+
 class UploadRead(BaseModel):
     patient_id: int
     file_name: str
     message: str
     metadata: dict[str, Any]
+
+
+class ImportValidationIssue(BaseModel):
+    file: str
+    row: int | None = None
+    column: str | None = None
+    severity: str
+    message: str
+
+
+class ImportFileValidationSummary(BaseModel):
+    file: str
+    row_count: int
+    missing_required_columns: list[str] = []
+    unknown_columns: list[str] = []
+
+
+class ImportValidationSummary(BaseModel):
+    file_count: int
+    total_rows: int
+    error_count: int
+    warning_count: int
+
+
+class ImportValidationReport(BaseModel):
+    valid: bool
+    summary: ImportValidationSummary
+    files: list[ImportFileValidationSummary]
+    issues: list[ImportValidationIssue]

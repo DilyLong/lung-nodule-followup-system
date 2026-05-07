@@ -281,6 +281,33 @@ export interface ImportSpec {
   future_import_endpoint: { planned: boolean; scope: string };
 }
 
+export interface ImportValidationIssue {
+  file: string;
+  row: number | null;
+  column: string | null;
+  severity: 'error' | 'warning' | string;
+  message: string;
+}
+
+export interface ImportFileValidationSummary {
+  file: string;
+  row_count: number;
+  missing_required_columns: string[];
+  unknown_columns: string[];
+}
+
+export interface ImportValidationReport {
+  valid: boolean;
+  summary: {
+    file_count: number;
+    total_rows: number;
+    error_count: number;
+    warning_count: number;
+  };
+  files: ImportFileValidationSummary[];
+  issues: ImportValidationIssue[];
+}
+
 function buildDownloadUrl(path: string, patientId?: number | null) {
   const baseUrl = api.defaults.baseURL ?? '';
   const suffix = patientId ? `?patient_id=${patientId}` : '';
@@ -301,6 +328,11 @@ export function measurementsCsvUrl(patientId?: number | null) {
 
 export async function fetchImportSpec() {
   const { data } = await api.get<ImportSpec>('/imports/spec');
+  return data;
+}
+
+export async function validateDatasetImport(formData: FormData) {
+  const { data } = await api.post<ImportValidationReport>('/imports/validate', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
   return data;
 }
 

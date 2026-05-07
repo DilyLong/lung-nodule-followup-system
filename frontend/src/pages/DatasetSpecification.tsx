@@ -39,7 +39,10 @@ export default function DatasetSpecification({ setPage }: Props) {
           <h1>数据集规范 / 真实数据准备</h1>
           <span>按统一 DICOM 目录、CSV 字段和标签规范整理数据，便于后续训练、统计和回顾性分析。</span>
         </div>
-        <button className="ghost" onClick={() => setPage({ name: 'dashboard' })}><ArrowLeft size={17} /> 返回工作台</button>
+        <div className="button-row">
+          <button className="primary" onClick={() => setPage({ name: 'upload' })}>去校验 CSV 数据集</button>
+          <button className="ghost" onClick={() => setPage({ name: 'dashboard' })}><ArrowLeft size={17} /> 返回工作台</button>
+        </div>
       </header>
 
       <section className="stat-grid">
