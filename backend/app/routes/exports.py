@@ -3,15 +3,18 @@ from __future__ import annotations
 import csv
 import io
 import json
-from datetime import date, datetime
+import zipfile
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
+from .imports import DATASET_SPEC
 from ..database import get_db
 from ..models import AnalysisResult, Nodule, NoduleMeasurement, Patient, Study
+from ..pipeline.model import model_runtime_status
 
 router = APIRouter(prefix="/exports", tags=["exports"])
 
@@ -130,14 +133,18 @@ def _csv_value(value: Any) -> Any:
     return value
 
 
-def _csv_response(filename: str, fields: list[str], rows: list[dict[str, Any]]) -> StreamingResponse:
+def _csv_content(fields: list[str], rows: list[dict[str, Any]]) -> str:
     output = io.StringIO()
     output.write("﻿")
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()
     for row in rows:
         writer.writerow({field: _csv_value(row.get(field)) for field in fields})
-    content = output.getvalue()
+    return output.getvalue()
+
+
+def _csv_response(filename: str, fields: list[str], rows: list[dict[str, Any]]) -> StreamingResponse:
+    content = _csv_content(fields, rows)
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(iter([content]), media_type="text/csv; charset=utf-8", headers=headers)
 
@@ -234,6 +241,8 @@ def _cohort_row(patient: Patient, nodule: Nodule | None) -> dict[str, Any]:
         "latest_risk_level": latest_analysis.risk_level if latest_analysis else None,
         "latest_analysis_at": latest_analysis.created_at if latest_analysis else None,
     }
+
+
 def _first_nodule(patient: Patient) -> Nodule | None:
     if not patient.nodules:
         return None
@@ -247,8 +256,7 @@ def _study_dates(patient: Patient) -> tuple[Any, Any]:
     return studies[0].study_date, studies[-1].study_date
 
 
-@router.get("/measurements.csv")
-def export_measurements(patient_id: int | None = Query(default=None), db: Session = Depends(get_db)) -> StreamingResponse:
+def _build_measurement_rows(db: Session, patient_id: int | None = None) -> list[dict[str, Any]]:
     query = (
         db.query(NoduleMeasurement)
         .join(Nodule, NoduleMeasurement.nodule_id == Nodule.id)
@@ -289,13 +297,17 @@ def export_measurements(patient_id: int | None = Query(default=None), db: Sessio
                 "thumbnail_seed": measurement.thumbnail_seed,
             }
         )
+    return rows
 
+
+@router.get("/measurements.csv")
+def export_measurements(patient_id: int | None = Query(default=None), db: Session = Depends(get_db)) -> StreamingResponse:
+    rows = _build_measurement_rows(db, patient_id)
     filename = f"patient-{patient_id}-measurements.csv" if patient_id else "measurements.csv"
     return _csv_response(filename, MEASUREMENT_FIELDS, rows)
 
 
-@router.get("/research-table.csv")
-def export_research_table(patient_id: int | None = Query(default=None), db: Session = Depends(get_db)) -> StreamingResponse:
+def _build_research_rows(db: Session, patient_id: int | None = None) -> list[dict[str, Any]]:
     query = (
         db.query(AnalysisResult)
         .join(Patient, AnalysisResult.patient_id == Patient.id)
@@ -371,12 +383,17 @@ def export_research_table(patient_id: int | None = Query(default=None), db: Sess
                 "created_at": analysis.created_at,
             }
         )
+    return rows
+
+
+@router.get("/research-table.csv")
+def export_research_table(patient_id: int | None = Query(default=None), db: Session = Depends(get_db)) -> StreamingResponse:
+    rows = _build_research_rows(db, patient_id)
     filename = f"patient-{patient_id}-research-table.csv" if patient_id else "research-table.csv"
     return _csv_response(filename, RESEARCH_FIELDS, rows)
 
 
-@router.get("/cohort-table.csv")
-def export_cohort_table(patient_id: int | None = Query(default=None), db: Session = Depends(get_db)) -> StreamingResponse:
+def _build_cohort_rows(db: Session, patient_id: int | None = None) -> list[dict[str, Any]]:
     query = (
         db.query(Patient)
         .options(
@@ -396,6 +413,80 @@ def export_cohort_table(patient_id: int | None = Query(default=None), db: Sessio
                 rows.append(_cohort_row(patient, nodule))
         else:
             rows.append(_cohort_row(patient, None))
+    return rows
 
+
+@router.get("/cohort-table.csv")
+def export_cohort_table(patient_id: int | None = Query(default=None), db: Session = Depends(get_db)) -> StreamingResponse:
+    rows = _build_cohort_rows(db, patient_id)
     filename = f"patient-{patient_id}-cohort-table.csv" if patient_id else "cohort-table.csv"
     return _csv_response(filename, COHORT_FIELDS, rows)
+
+
+def _export_counts(db: Session, patient_id: int | None) -> dict[str, int]:
+    patient_query = db.query(Patient)
+    study_query = db.query(Study).join(Patient, Study.patient_id == Patient.id)
+    nodule_query = db.query(Nodule).join(Patient, Nodule.patient_id == Patient.id)
+    measurement_query = db.query(NoduleMeasurement).join(Nodule, NoduleMeasurement.nodule_id == Nodule.id).join(Patient, Nodule.patient_id == Patient.id)
+    analysis_query = db.query(AnalysisResult).join(Patient, AnalysisResult.patient_id == Patient.id)
+    if patient_id is not None:
+        patient_query = patient_query.filter(Patient.id == patient_id)
+        study_query = study_query.filter(Patient.id == patient_id)
+        nodule_query = nodule_query.filter(Patient.id == patient_id)
+        measurement_query = measurement_query.filter(Patient.id == patient_id)
+        analysis_query = analysis_query.filter(Patient.id == patient_id)
+    return {
+        "patient_count": patient_query.count(),
+        "study_count": study_query.count(),
+        "nodule_count": nodule_query.count(),
+        "measurement_count": measurement_query.count(),
+        "analysis_count": analysis_query.count(),
+    }
+
+
+def _package_metadata(db: Session, patient_id: int | None, cohort_rows: list[dict[str, Any]], measurement_rows: list[dict[str, Any]], research_rows: list[dict[str, Any]], model_status: dict[str, Any]) -> dict[str, Any]:
+    counts = _export_counts(db, patient_id)
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "scope": "patient" if patient_id is not None else "all",
+        "patient_id": patient_id,
+        "spec_version": DATASET_SPEC["spec_version"],
+        "input_schema_version": model_status.get("input_schema_version"),
+        "counts": counts,
+        "row_counts": {
+            "cohort_table": len(cohort_rows),
+            "measurements": len(measurement_rows),
+            "research_table": len(research_rows),
+        },
+        "files": [
+            "cohort-table.csv",
+            "measurements.csv",
+            "research-table.csv",
+            "imports-spec.json",
+            "model-status.json",
+            "metadata.json",
+        ],
+    }
+
+
+@router.get("/research-package.zip")
+def export_research_package(patient_id: int | None = Query(default=None), db: Session = Depends(get_db)) -> StreamingResponse:
+    cohort_rows = _build_cohort_rows(db, patient_id)
+    measurement_rows = _build_measurement_rows(db, patient_id)
+    research_rows = _build_research_rows(db, patient_id)
+    model_status = model_runtime_status()
+    metadata = _package_metadata(db, patient_id, cohort_rows, measurement_rows, research_rows, model_status)
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("cohort-table.csv", _csv_content(COHORT_FIELDS, cohort_rows))
+        archive.writestr("measurements.csv", _csv_content(MEASUREMENT_FIELDS, measurement_rows))
+        archive.writestr("research-table.csv", _csv_content(RESEARCH_FIELDS, research_rows))
+        archive.writestr("imports-spec.json", json.dumps(DATASET_SPEC, ensure_ascii=False, indent=2, default=str))
+        archive.writestr("model-status.json", json.dumps(model_status, ensure_ascii=False, indent=2, default=str))
+        archive.writestr("metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2, default=str))
+    buffer.seek(0)
+
+    filename = f"patient-{patient_id}-research-package.zip" if patient_id else "research-package.zip"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(buffer, media_type="application/zip", headers=headers)
