@@ -117,6 +117,13 @@ RESEARCH_FIELDS = [
     "model_status",
     "model_version",
     "input_schema_version",
+    "data_schema_version",
+    "feature_version",
+    "model_artifact",
+    "model_artifact_hash",
+    "model_input_feature_count",
+    "inference_started_at",
+    "analysis_generated_at",
     "backend",
     "top_contribution_1",
     "top_contribution_2",
@@ -351,6 +358,7 @@ def _build_research_rows(db: Session, patient_id: int | None = None) -> list[dic
         baseline_study_date, latest_study_date = _study_dates(patient)
         features = payload.get("features") if isinstance(payload.get("features"), dict) else {}
         risk = payload.get("risk") if isinstance(payload.get("risk"), dict) else {}
+        trace = payload.get("trace") if isinstance(payload.get("trace"), dict) else {}
         registration = payload.get("registration") if isinstance(payload.get("registration"), dict) else {}
         series = features.get("series") if isinstance(features.get("series"), list) else []
         baseline = series[0] if series else {}
@@ -398,8 +406,15 @@ def _build_research_rows(db: Session, patient_id: int | None = None) -> list[dic
                 "model_name": risk.get("model_name"),
                 "model_status": risk.get("model_status"),
                 "model_version": risk.get("model_version"),
-                "input_schema_version": risk.get("input_schema_version"),
-                "backend": risk.get("backend"),
+                "input_schema_version": trace.get("input_schema_version", risk.get("input_schema_version")),
+                "data_schema_version": trace.get("data_schema_version", risk.get("data_schema_version")),
+                "feature_version": trace.get("feature_version", risk.get("feature_version")),
+                "model_artifact": trace.get("model_artifact", risk.get("model_artifact")),
+                "model_artifact_hash": trace.get("model_artifact_hash", risk.get("model_artifact_hash")),
+                "model_input_feature_count": trace.get("model_input_feature_count", risk.get("model_input_feature_count")),
+                "inference_started_at": trace.get("inference_started_at", risk.get("inference_started_at")),
+                "analysis_generated_at": trace.get("analysis_generated_at"),
+                "backend": trace.get("backend", risk.get("backend")),
                 "top_contribution_1": _format_contribution(contributions, 0),
                 "top_contribution_2": _format_contribution(contributions, 1),
                 "top_contribution_3": _format_contribution(contributions, 2),
@@ -467,6 +482,20 @@ def _export_counts(db: Session, patient_id: int | None) -> dict[str, int]:
     }
 
 
+def _trace_field_names() -> list[str]:
+    return [
+        "data_schema_version",
+        "feature_version",
+        "input_schema_version",
+        "model_version",
+        "model_artifact",
+        "model_artifact_hash",
+        "model_input_feature_count",
+        "inference_started_at",
+        "analysis_generated_at",
+    ]
+
+
 def _package_metadata(db: Session, patient_id: int | None, cohort_rows: list[dict[str, Any]], measurement_rows: list[dict[str, Any]], research_rows: list[dict[str, Any]], model_status: dict[str, Any]) -> dict[str, Any]:
     counts = _export_counts(db, patient_id)
     return {
@@ -475,6 +504,7 @@ def _package_metadata(db: Session, patient_id: int | None, cohort_rows: list[dic
         "patient_id": patient_id,
         "spec_version": DATASET_SPEC["spec_version"],
         "input_schema_version": model_status.get("input_schema_version"),
+        "trace_fields": _trace_field_names(),
         "counts": counts,
         "row_counts": {
             "cohort_table": len(cohort_rows),

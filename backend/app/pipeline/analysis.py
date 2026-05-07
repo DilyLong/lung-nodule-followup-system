@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from .features import calculate_temporal_features
@@ -18,6 +19,25 @@ def _select_nodule(patient: Any, nodule_id: int | None) -> Any:
         if nodule.id == nodule_id:
             return nodule
     raise ValueError("nodule does not belong to this patient")
+
+
+def _risk_trace(risk: dict[str, Any]) -> dict[str, Any]:
+    keys = [
+        "data_schema_version",
+        "feature_version",
+        "input_schema_version",
+        "model_version",
+        "model_artifact",
+        "model_artifact_hash",
+        "model_artifact_path",
+        "backend",
+        "model_status",
+        "inference_started_at",
+        "model_input_feature_count",
+    ]
+    trace = {key: risk.get(key) for key in keys}
+    trace["analysis_generated_at"] = datetime.now(timezone.utc).isoformat()
+    return trace
 
 
 def run_patient_analysis(patient: Any, nodule_id: int | None = None) -> dict[str, Any]:
@@ -82,6 +102,7 @@ def run_patient_analysis(patient: Any, nodule_id: int | None = None) -> dict[str
         },
         "features": features,
         "risk": risk,
+        "trace": _risk_trace(risk),
     }
 
     return {

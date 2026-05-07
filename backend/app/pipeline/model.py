@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
+import hashlib
 import importlib.util
 import math
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ import numpy as np
 from .features import calculate_temporal_features
 
 INPUT_SCHEMA_VERSION = "temporal-nodule-v1"
+FEATURE_VERSION = "temporal-features-v1"
+DATA_SCHEMA_VERSION = "dataset-spec-v1"
 MODEL_VERSION = "surrogate-2026-05-07"
 ARTIFACT_DIR = Path(__file__).resolve().parents[2] / "model_artifacts"
 TORCH_ARTIFACT = ARTIFACT_DIR / "temporal_model.pt"
@@ -213,6 +216,7 @@ def _normalize_model_output(output: Any, model_input: dict[str, Any], status: st
             "model_input": model_input,
             "contributions": contributions,
             "model_artifact": artifact_path.name,
+            **_inference_metadata(model_input, artifact_path),
         }
 
     risk_score = _score_from_output(output)
@@ -227,11 +231,34 @@ def _normalize_model_output(output: Any, model_input: dict[str, Any], status: st
         "model_input": model_input,
         "contributions": [],
         "model_artifact": artifact_path.name,
+        **_inference_metadata(model_input, artifact_path),
     }
 
 
 def _artifact_version(path: Path) -> str:
     return f"{path.stem}-{int(path.stat().st_mtime)}"
+
+
+def _artifact_hash(path: Path | None) -> str | None:
+    if not path or not path.exists():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()[:16]
+
+
+def _inference_metadata(model_input: dict[str, Any], artifact_path: Path | None = None) -> dict[str, Any]:
+    return {
+        "data_schema_version": DATA_SCHEMA_VERSION,
+        "feature_version": FEATURE_VERSION,
+        "input_schema_version": INPUT_SCHEMA_VERSION,
+        "inference_started_at": datetime.now(timezone.utc).isoformat(),
+        "model_artifact_hash": _artifact_hash(artifact_path),
+        "model_artifact_path": str(artifact_path) if artifact_path else None,
+        "model_input_feature_count": int(_feature_vector(model_input).shape[1]),
+    }
 
 
 class TorchArtifactModel:
@@ -332,6 +359,7 @@ class TemporalSurrogateModel:
             "backend": self.backend,
             "model_input": model_input,
             "contributions": [item.as_dict() for item in ordered],
+            **_inference_metadata(model_input),
         }
 
 
@@ -615,6 +643,7 @@ def model_runtime_status() -> dict[str, Any]:
                 "exists": torch_exists,
                 "dependency": "torch",
                 "dependency_available": torch_available,
+                "sha256": _artifact_hash(TORCH_ARTIFACT),
                 "status": "ready" if torch_exists and torch_available else "missing_dependency" if torch_exists else "missing",
             },
             {
@@ -624,6 +653,7 @@ def model_runtime_status() -> dict[str, Any]:
                 "exists": onnx_exists,
                 "dependency": "onnxruntime",
                 "dependency_available": onnxruntime_available,
+                "sha256": _artifact_hash(ONNX_ARTIFACT),
                 "status": "ready" if onnx_exists and onnxruntime_available else "missing_dependency" if onnx_exists else "missing",
             },
         ],

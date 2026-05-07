@@ -20,6 +20,11 @@ interface ModelRiskPayload {
   backend?: string;
   fallback_reason?: string;
   model_artifact?: string;
+  model_artifact_hash?: string;
+  model_input_feature_count?: number;
+  inference_started_at?: string;
+  data_schema_version?: string;
+  feature_version?: string;
   model_input?: {
     timepoint_count?: number;
     clinical_features?: Record<string, unknown>;
@@ -27,13 +32,27 @@ interface ModelRiskPayload {
   contributions?: Contribution[];
 }
 
-function parseRisk(analysis?: Analysis): ModelRiskPayload | null {
-  if (!analysis) return null;
+interface RiskTracePayload {
+  data_schema_version?: string;
+  feature_version?: string;
+  input_schema_version?: string;
+  model_version?: string;
+  model_artifact?: string;
+  model_artifact_hash?: string;
+  backend?: string;
+  model_status?: string;
+  inference_started_at?: string;
+  analysis_generated_at?: string;
+  model_input_feature_count?: number;
+}
+
+function parsePayload(analysis?: Analysis): { risk: ModelRiskPayload | null; trace: RiskTracePayload } {
+  if (!analysis) return { risk: null, trace: {} };
   try {
     const features = JSON.parse(analysis.features_json);
-    return features.risk ?? null;
+    return { risk: features.risk ?? null, trace: features.trace ?? {} };
   } catch {
-    return null;
+    return { risk: null, trace: {} };
   }
 }
 
@@ -57,8 +76,12 @@ function modelMode(status?: string) {
   return 'proxy';
 }
 
+function formatDateTime(value?: string) {
+  return value ? new Date(value).toLocaleString() : '-';
+}
+
 export default function ModelExplanationPanel({ analysis }: Props) {
-  const risk = parseRisk(analysis);
+  const { risk, trace } = parsePayload(analysis);
 
   if (!analysis) {
     return <p className="empty compact">运行时序分析后显示模型输入、推理后端和风险贡献因子。</p>;
@@ -70,19 +93,30 @@ export default function ModelExplanationPanel({ analysis }: Props) {
 
   const contributions = risk.contributions?.slice(0, 5) ?? [];
   const maxPoints = Math.max(...contributions.map((item) => item.points), 0.01);
-
   const mode = modelMode(risk.model_status);
+  const artifactName = trace.model_artifact ?? risk.model_artifact;
+  const artifactHash = trace.model_artifact_hash ?? risk.model_artifact_hash;
 
   return (
     <div className="model-explanation">
       <div className="model-summary">
         <div><span>模型状态</span><strong>{statusText(risk.model_status)}</strong></div>
-        <div><span>模型版本</span><strong>{risk.model_version ?? '-'}</strong></div>
+        <div><span>模型版本</span><strong>{trace.model_version ?? risk.model_version ?? '-'}</strong></div>
         <div><span>输入时间点</span><strong>{risk.model_input?.timepoint_count ?? '-'}</strong></div>
       </div>
       <p className="model-note">
-        {risk.model_name ?? 'Temporal model'} · 后端 {risk.backend ?? '-'} · 输入 schema {risk.input_schema_version ?? '-'}
-        {risk.model_artifact ? ` · 权重 ${risk.model_artifact}` : ''}
+        {risk.model_name ?? 'Temporal model'} · 后端 {trace.backend ?? risk.backend ?? '-'} · 输入 schema {trace.input_schema_version ?? risk.input_schema_version ?? '-'}
+        {artifactName ? ` · 权重 ${artifactName}` : ''}
+      </p>
+      <div className="model-summary">
+        <div><span>数据 Schema</span><strong>{trace.data_schema_version ?? risk.data_schema_version ?? '-'}</strong></div>
+        <div><span>特征版本</span><strong>{trace.feature_version ?? risk.feature_version ?? '-'}</strong></div>
+        <div><span>输入特征维度</span><strong>{trace.model_input_feature_count ?? risk.model_input_feature_count ?? '-'}</strong></div>
+      </div>
+      <p className="model-note">
+        推理时间 {formatDateTime(trace.inference_started_at ?? risk.inference_started_at)}
+        {trace.analysis_generated_at ? ` · 分析生成 ${formatDateTime(trace.analysis_generated_at)}` : ''}
+        {artifactHash ? ` · artifact hash ${artifactHash}` : ''}
       </p>
       {mode === 'real' && (
         <p className="success-banner compact">当前分析已使用真实模型权重推理，风险评分来自模型 artifact。</p>

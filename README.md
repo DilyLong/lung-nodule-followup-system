@@ -55,7 +55,7 @@ npm run dev
 2. 打开任一肺结节随访病例。
 3. 查看 T1/T2/T3 多期 CT 指标和模拟配准对比。
 4. 选择目标结节并点击“运行目标结节分析”。
-5. 查看 AI 风险评分、个性化随访建议和模型解释。
+5. 查看 AI 风险评分、个性化随访建议、模型解释和版本追踪信息。
 6. 生成结构化报告，编辑医生意见和随访计划，保存草稿或确认最终版。
 
 ## 真实数据与模型接入准备
@@ -68,6 +68,7 @@ npm run dev
 - 模型状态：前端侧边栏“模型状态”页面读取 `GET /model/status`，显示权重文件、`torch` / `onnxruntime` 依赖和当前推理模式。
 - 模型自检：模型状态页可调用 `POST /model/self-check`，使用内置三期 synthetic temporal fixture 校验 `temporal-nodule-v1` 输入 schema，并执行真实模型或代理 fallback dry-run。
 - 多结节分析：病例详情页可选择目标结节运行 `POST /analysis/{patient_id}/run?nodule_id=...`，每次分析结果记录 `nodule_id`，便于临床展示和回顾性研究表按结节追踪。
+- 风险追踪：每次分析会在 `features_json.trace` 与 `research-table.csv` 中记录数据 schema、特征版本、模型版本、artifact/hash、推理时间和输入特征维度。
 - 报告确认：结构化报告页可调用 `PUT /reports/{report_id}` 保存医生编辑后的 Markdown、医生意见和随访建议，并可确认最终版。
 
 ## 后续扩展
