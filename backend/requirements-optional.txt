@@ -1,0 +1,4 @@
+pydicom==3.0.1
+SimpleITK==2.4.1
+torch==2.5.1
+scikit-image==0.25.0

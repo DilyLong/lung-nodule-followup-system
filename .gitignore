@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+.env.*
+
+# Local database and runtime uploads
+backend/*.db
+backend/uploads/
+backend/study_data/
+
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+
+# Logs and temp files
+*.log
+nohup.out
+.DS_Store
