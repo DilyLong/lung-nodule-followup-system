@@ -5,7 +5,7 @@ from typing import Any
 from .features import calculate_temporal_features
 from .model import predict_progression_risk
 from .preprocess import preprocess_patient_studies
-from .recommendation import recommend_followup
+from .recommendation import recommend_followup, structured_followup_recommendation
 from .registration import register_studies
 
 
@@ -90,6 +90,7 @@ def run_patient_analysis(patient: Any, nodule_id: int | None = None) -> dict[str
     features = calculate_temporal_features(measurements)
     risk = predict_progression_risk(features, nodule.nodule_type, patient.age, patient.smoking_history)
     recommendation = recommend_followup(risk, features, nodule.nodule_type)
+    structured_recommendation = structured_followup_recommendation(risk, features, nodule.nodule_type)
 
     feature_payload = {
         "preprocessing": preprocessing,
@@ -103,6 +104,7 @@ def run_patient_analysis(patient: Any, nodule_id: int | None = None) -> dict[str
         "features": features,
         "risk": risk,
         "trace": _risk_trace(risk),
+        "recommendation": structured_recommendation,
     }
 
     return {

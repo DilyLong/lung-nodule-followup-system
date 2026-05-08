@@ -37,7 +37,7 @@ MEASUREMENT_FIELDS = [
     "solid_component_percent",
     "spiculation_score",
     "lobulation_score",
-    "pleural_retraction_score",
+    "measurement_source",
     "thumbnail_seed",
 ]
 
@@ -310,6 +310,7 @@ def _build_measurement_rows(db: Session, patient_id: int | None = None) -> list[
                 "spiculation_score": measurement.spiculation_score,
                 "lobulation_score": measurement.lobulation_score,
                 "pleural_retraction_score": measurement.pleural_retraction_score,
+                "measurement_source": measurement.measurement_source,
                 "thumbnail_seed": measurement.thumbnail_seed,
             }
         )

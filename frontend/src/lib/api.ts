@@ -161,6 +161,40 @@ export interface Report {
   finalized_at: string | null;
 }
 
+export interface ReportVersion {
+  id: number;
+  report_id: number;
+  version_number: number;
+  created_at: string;
+  status: string;
+  content_markdown: string;
+  doctor_opinion: string;
+  followup_plan: string;
+}
+
+export interface ReportAuditLog {
+  id: number;
+  report_id: number;
+  created_at: string;
+  event: string;
+  message: string;
+}
+
+export async function fetchReportVersions(reportId: number) {
+  const { data } = await api.get<ReportVersion[]>(`/reports/${reportId}/versions`);
+  return data;
+}
+
+export async function fetchReportAudit(reportId: number) {
+  const { data } = await api.get<ReportAuditLog[]>(`/reports/${reportId}/audit`);
+  return data;
+}
+
+export async function createReportRevision(reportId: number) {
+  const { data } = await api.post<Report>(`/reports/${reportId}/revisions`);
+  return data;
+}
+
 export interface ReportUpdatePayload {
   content_markdown: string;
   doctor_opinion: string;
@@ -334,21 +368,58 @@ export interface ImportValidationReport {
   issues: ImportValidationIssue[];
 }
 
+export interface ImportCommitCounts {
+  patients_created: number;
+  patients_updated: number;
+  studies_created: number;
+  studies_updated: number;
+  nodules_created: number;
+  nodules_updated: number;
+  measurements_created: number;
+  measurements_updated: number;
+}
+
 export interface ImportCommitReport {
   committed: boolean;
   validation: ImportValidationReport;
-  counts: {
-    patients_created: number;
-    patients_updated: number;
-    studies_created: number;
-    studies_updated: number;
-    nodules_created: number;
-    nodules_updated: number;
-    measurements_created: number;
-    measurements_updated: number;
-  };
+  counts: ImportCommitCounts;
   patient_ids: number[];
   message: string;
+}
+
+export interface ImportPreviewReport {
+  validation: ImportValidationReport;
+  counts: ImportCommitCounts;
+  qc_score: number;
+  qc_issues: ImportValidationIssue[];
+  message: string;
+}
+
+export interface ImportBatch {
+  id: number;
+  created_at: string;
+  committed_at: string | null;
+  rolled_back_at: string | null;
+  status: string;
+  qc_score: number;
+  counts_json: string;
+  issues_json: string;
+  message: string;
+}
+
+export interface ImportBatchEntity {
+  id: number;
+  batch_id: number;
+  entity_type: string;
+  entity_id: number;
+  action: string;
+  stable_key: string;
+  previous_json: string | null;
+}
+
+export interface ImportBatchDetail {
+  batch: ImportBatch;
+  entities: ImportBatchEntity[];
 }
 
 function buildDownloadUrl(path: string, patientId?: number | null) {
@@ -383,8 +454,28 @@ export async function validateDatasetImport(formData: FormData) {
   return data;
 }
 
+export async function previewDatasetImport(formData: FormData) {
+  const { data } = await api.post<ImportPreviewReport>('/imports/preview', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+  return data;
+}
+
 export async function commitDatasetImport(formData: FormData) {
   const { data } = await api.post<ImportCommitReport>('/imports/commit', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+  return data;
+}
+
+export async function fetchImportBatches() {
+  const { data } = await api.get<ImportBatch[]>('/imports/batches');
+  return data;
+}
+
+export async function fetchImportBatchDetail(batchId: number) {
+  const { data } = await api.get<ImportBatchDetail>(`/imports/batches/${batchId}`);
+  return data;
+}
+
+export async function rollbackImportBatch(batchId: number) {
+  const { data } = await api.post<ImportBatch>(`/imports/batches/${batchId}/rollback`);
   return data;
 }
 
@@ -482,6 +573,8 @@ export interface SystemStatus {
     analysis_count: number;
     report_count: number;
     final_report_count: number;
+    import_batch_count: number;
+    measurement_sources: Record<string, number>;
   };
   model: {
     active_mode: string;
@@ -495,6 +588,7 @@ export interface SystemStatus {
     analysis: null | { id: number; patient_id: number; nodule_id: number | null; created_at: string; risk_level: string; risk_score: number };
     report: null | { id: number; patient_id: number; analysis_id: number; created_at: string; status: string; finalized_at: string | null };
     final_report: null | { id: number; patient_id: number; analysis_id: number; created_at: string; status: string; finalized_at: string | null };
+    import_batch: null | { id: number; created_at: string; status: string; qc_score: number; message: string };
   };
   readiness: Array<{ key: string; label: string; available: boolean }>;
   actions: Array<{ key: string; severity: 'info' | 'warning' | string; title: string; description: string; target_page: 'upload' | 'dashboard' | 'modelStatus' | string }>;

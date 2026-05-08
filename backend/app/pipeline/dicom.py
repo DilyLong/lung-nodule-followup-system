@@ -86,7 +86,60 @@ def _collect_dicom_files(input_path: Path, work_dir: Path) -> list[Path]:
     return [input_path]
 
 
-def render_dicom_series(input_path: Path, output_dir: Path) -> DicomSeriesResult:
+def _series_uid(dataset: Any) -> str:
+    return str(getattr(dataset, "SeriesInstanceUID", "unknown-series"))
+
+
+def _series_summary(datasets: list[tuple[Path, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, list[Any]] = {}
+    for _, dataset in datasets:
+        groups.setdefault(_series_uid(dataset), []).append(dataset)
+    summaries = []
+    for uid, group in groups.items():
+        first = group[0]
+        summaries.append(
+            {
+                "series_instance_uid": uid,
+                "series_description": str(getattr(first, "SeriesDescription", "DICOM CT Series"))[:128],
+                "modality": str(getattr(first, "Modality", "CT")),
+                "slice_count": len(group),
+                "slice_thickness_mm": float(getattr(first, "SliceThickness", 1.0) or 1.0),
+            }
+        )
+    return sorted(summaries, key=lambda item: (item["modality"] != "CT", -item["slice_count"]))
+
+
+def _anonymization_issues(dataset: Any) -> list[str]:
+    fields = ["PatientName", "PatientID", "AccessionNumber", "PatientBirthDate", "InstitutionName"]
+    return [field for field in fields if str(getattr(dataset, field, "")).strip()]
+
+def _read_dicom_datasets(input_path: Path) -> list[tuple[Path, Any]]:
+    with TemporaryDirectory() as temp_name:
+        candidates = _collect_dicom_files(input_path, Path(temp_name))
+        datasets = []
+        for candidate in candidates:
+            try:
+                dataset = pydicom.dcmread(candidate, force=True)
+            except (InvalidDicomError, OSError):
+                continue
+            if hasattr(dataset, "PixelData"):
+                datasets.append((candidate, dataset))
+        return datasets
+
+
+def inspect_dicom_series(input_path: Path) -> dict[str, Any]:
+    datasets = _read_dicom_datasets(input_path)
+    if not datasets:
+        return {"dicom_detected": False, "series": [], "anonymization": {"checked": False, "safe": False, "unsafe_fields": []}}
+    unsafe_fields = sorted({field for _, dataset in datasets for field in _anonymization_issues(dataset)})
+    return {
+        "dicom_detected": True,
+        "series": _series_summary(datasets),
+        "anonymization": {"checked": True, "safe": len(unsafe_fields) == 0, "unsafe_fields": unsafe_fields},
+    }
+
+
+def render_dicom_series(input_path: Path, output_dir: Path, series_uid: str | None = None) -> DicomSeriesResult:
     output_dir.mkdir(parents=True, exist_ok=True)
     raw_dir = output_dir / "dicom"
     png_dir = output_dir / "png"
@@ -102,6 +155,8 @@ def render_dicom_series(input_path: Path, output_dir: Path) -> DicomSeriesResult
             except (InvalidDicomError, OSError):
                 continue
             if not hasattr(dataset, "PixelData"):
+                continue
+            if series_uid is not None and _series_uid(dataset) != series_uid:
                 continue
             datasets.append((candidate, dataset))
 
@@ -135,6 +190,9 @@ def render_dicom_series(input_path: Path, output_dir: Path) -> DicomSeriesResult
         "scanner": str(getattr(first_dataset, "Manufacturer", "DICOM CT"))[:64],
         "slice_thickness_mm": float(getattr(first_dataset, "SliceThickness", 1.0) or 1.0),
         "series_description": str(getattr(first_dataset, "SeriesDescription", "DICOM CT Series"))[:128],
+        "series_instance_uid": _series_uid(first_dataset),
+        "available_series": _series_summary(datasets),
+        "anonymization": {"checked": True, "safe": len(_anonymization_issues(first_dataset)) == 0, "unsafe_fields": _anonymization_issues(first_dataset)},
         "slice_count": len(rendered),
         "rows": rendered[0].rows,
         "columns": rendered[0].columns,

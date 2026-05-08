@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import AnalysisResult, Nodule, NoduleMeasurement, Patient, Report, Study
+from ..models import AnalysisResult, ImportBatch, Nodule, NoduleMeasurement, Patient, Report, Study
 from ..pipeline.model import model_runtime_status
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -50,7 +50,7 @@ def _actions(model_status: dict[str, Any], analysis_count: int, final_report_cou
             "key": "import_csv",
             "severity": "info",
             "title": "导入真实队列 CSV",
-            "description": "校验通过后可将 patients/studies/nodules/measurements 写入数据库。",
+            "description": "校验、预览并确认后可将 patients/studies/nodules/measurements 写入数据库，导入批次支持审计和回滚。",
             "target_page": "upload",
         }
     ]
@@ -97,6 +97,27 @@ def _actions(model_status: dict[str, Any], analysis_count: int, final_report_cou
     return actions
 
 
+def _latest_import_batch(db: Session) -> dict[str, Any] | None:
+    batch = db.query(ImportBatch).order_by(ImportBatch.created_at.desc()).first()
+    if not batch:
+        return None
+    return {
+        "id": batch.id,
+        "created_at": batch.created_at,
+        "status": batch.status,
+        "qc_score": batch.qc_score,
+        "message": batch.message,
+    }
+
+
+def _measurement_sources(db: Session) -> dict[str, int]:
+    rows = db.query(NoduleMeasurement.measurement_source).all()
+    counts: dict[str, int] = {}
+    for (source,) in rows:
+        counts[source or "unknown"] = counts.get(source or "unknown", 0) + 1
+    return counts
+
+
 @router.get("/status")
 def get_system_status(db: Session = Depends(get_db)) -> dict[str, Any]:
     model_status = model_runtime_status()
@@ -117,6 +138,8 @@ def get_system_status(db: Session = Depends(get_db)) -> dict[str, Any]:
             "analysis_count": analysis_count,
             "report_count": db.query(Report).count(),
             "final_report_count": final_report_count,
+            "import_batch_count": db.query(ImportBatch).count(),
+            "measurement_sources": _measurement_sources(db),
         },
         "model": {
             "active_mode": model_status["active_mode"],
@@ -135,11 +158,14 @@ def get_system_status(db: Session = Depends(get_db)) -> dict[str, Any]:
             "analysis": _latest_analysis(db),
             "report": _latest_report(db),
             "final_report": _latest_report(db, final_only=True),
+            "import_batch": _latest_import_batch(db),
         },
         "readiness": [
             {"key": "dataset_spec", "label": "数据集规范", "available": True},
             {"key": "csv_validation", "label": "CSV 导入前校验", "available": True},
+            {"key": "csv_preview", "label": "导入预览与质控评分", "available": True},
             {"key": "csv_commit", "label": "CSV 真实导入入库", "available": True},
+            {"key": "import_batch_rollback", "label": "导入批次审计与回滚", "available": True},
             {"key": "research_package", "label": "研究数据包导出", "available": True},
             {"key": "model_self_check", "label": "模型接入自检", "available": True},
             {"key": "multi_nodule_analysis", "label": "多结节独立分析", "available": True},

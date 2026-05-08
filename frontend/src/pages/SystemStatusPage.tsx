@@ -53,6 +53,7 @@ export default function SystemStatusPage({ setPage }: Props) {
     ['分析', status.database.analysis_count],
     ['报告', status.database.report_count],
     ['最终版报告', status.database.final_report_count],
+    ['导入批次', status.database.import_batch_count],
   ];
 
   return (
@@ -101,6 +102,7 @@ export default function SystemStatusPage({ setPage }: Props) {
           <div className="spec-kv-grid">
             <div><span>最近分析</span><strong>{status.latest.analysis ? `${status.latest.analysis.risk_level} ${status.latest.analysis.risk_score.toFixed(2)}` : '暂无'}</strong><span>{formatDate(status.latest.analysis?.created_at)}</span></div>
             <div><span>最近报告</span><strong>{status.latest.report?.status ?? '暂无'}</strong><span>{formatDate(status.latest.report?.created_at)}</span></div>
+            <div><span>最近导入批次</span><strong>{status.latest.import_batch ? `#${status.latest.import_batch.id} · ${status.latest.import_batch.status} · QC ${status.latest.import_batch.qc_score.toFixed(1)}` : '暂无'}</strong><span>{formatDate(status.latest.import_batch?.created_at)}</span></div>
             <div><span>最近最终版</span><strong>{status.latest.final_report?.status ?? '暂无'}</strong><span>{formatDate(status.latest.final_report?.finalized_at)}</span></div>
           </div>
         </div>
@@ -130,6 +132,14 @@ export default function SystemStatusPage({ setPage }: Props) {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+        <div className="panel spec-section">
+          <h2><Clock size={19} /> 测量来源</h2>
+          <div className="status-grid">
+            {Object.entries(status.database.measurement_sources).map(([source, count]) => (
+              <div className="status-card" key={source}><span>{source}</span><strong>{count}</strong></div>
+            ))}
           </div>
         </div>
         <div className="panel spec-section">

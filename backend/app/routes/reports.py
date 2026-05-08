@@ -7,8 +7,8 @@ from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
-from ..models import AnalysisResult, Nodule, Patient, Report, Study
-from ..schemas import ReportRead, ReportUpdate
+from ..models import AnalysisResult, Nodule, Patient, Report, ReportAuditLog, ReportVersion, Study
+from ..schemas import ReportAuditRead, ReportRead, ReportUpdate, ReportVersionRead
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -204,6 +204,25 @@ def _report_html(report: Report) -> str:
 </html>"""
 
 
+def _next_version_number(report_id: int, db: Session) -> int:
+    latest = db.query(ReportVersion).filter(ReportVersion.report_id == report_id).order_by(ReportVersion.version_number.desc()).first()
+    return (latest.version_number if latest else 0) + 1
+
+
+def _add_report_version(report: Report, db: Session, event: str, message: str) -> None:
+    db.add(
+        ReportVersion(
+            report_id=report.id,
+            version_number=_next_version_number(report.id, db),
+            status=report.status,
+            content_markdown=report.content_markdown,
+            doctor_opinion=report.doctor_opinion,
+            followup_plan=report.followup_plan,
+        )
+    )
+    db.add(ReportAuditLog(report_id=report.id, event=event, message=message))
+
+
 @router.post("/{analysis_id}", response_model=ReportRead)
 def create_report(analysis_id: int, db: Session = Depends(get_db)) -> Report:
     analysis = db.get(AnalysisResult, analysis_id)
@@ -232,6 +251,8 @@ def create_report(analysis_id: int, db: Session = Depends(get_db)) -> Report:
         status="draft",
     )
     db.add(report)
+    db.flush()
+    _add_report_version(report, db, "created", "创建报告草稿 v1")
     db.commit()
     db.refresh(report)
     return report
@@ -258,6 +279,7 @@ def update_report(report_id: int, payload: ReportUpdate, db: Session = Depends(g
     report.followup_plan = payload.followup_plan
     report.status = payload.status
     report.finalized_at = datetime.utcnow() if payload.status == "final" else None
+    _add_report_version(report, db, "finalized" if payload.status == "final" else "draft_saved", "确认最终版报告" if payload.status == "final" else "保存报告草稿")
     db.commit()
     db.refresh(report)
     return report
@@ -282,6 +304,38 @@ def export_report_print_html(report_id: int, db: Session = Depends(get_db)) -> H
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     return HTMLResponse(_report_html(report))
+
+
+@router.post("/{report_id}/revisions", response_model=ReportRead)
+def create_report_revision(report_id: int, db: Session = Depends(get_db)) -> Report:
+    report = db.get(Report, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    revision = Report(
+        patient_id=report.patient_id,
+        analysis_id=report.analysis_id,
+        title=report.title,
+        content_markdown=report.content_markdown,
+        doctor_opinion=report.doctor_opinion,
+        followup_plan=report.followup_plan,
+        status="draft",
+    )
+    db.add(revision)
+    db.flush()
+    _add_report_version(revision, db, "revision_created", f"基于报告 {report.id} 创建修订草稿")
+    db.commit()
+    db.refresh(revision)
+    return revision
+
+
+@router.get("/{report_id}/versions", response_model=list[ReportVersionRead])
+def list_report_versions(report_id: int, db: Session = Depends(get_db)) -> list[ReportVersion]:
+    return db.query(ReportVersion).filter(ReportVersion.report_id == report_id).order_by(ReportVersion.version_number).all()
+
+
+@router.get("/{report_id}/audit", response_model=list[ReportAuditRead])
+def list_report_audit(report_id: int, db: Session = Depends(get_db)) -> list[ReportAuditLog]:
+    return db.query(ReportAuditLog).filter(ReportAuditLog.report_id == report_id).order_by(ReportAuditLog.created_at).all()
 
 
 @router.get("/{report_id}", response_model=ReportRead)

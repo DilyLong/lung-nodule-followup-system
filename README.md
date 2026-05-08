@@ -12,9 +12,10 @@
 - 三维配准、时序特征、ConvLSTM 推理的可替换算法接口
 - AI 风险分层与个体化随访建议
 - 结构化随访报告生成、医生编辑确认与草稿/最终版保存
-- 真实 CSV 队列校验与一键导入入库
+- 真实 CSV 队列校验、预览、质控评分、批次审计与一键导入/回滚
 - 数据集规范页面，展示真实 DICOM 多期目录、CSV 字段、标签枚举和质控规则
-- 研究导出：基础队列表、测量表、分析研究表 CSV
+- 研究导出：基础队列表、测量表、分析研究表 CSV 与研究数据包 ZIP
+- 报告版本和审计记录，最终版锁定后可创建修订草稿
 - 模型接入状态页，检查 `.pt` / `.onnx` 权重、推理依赖、当前真实/代理模型模式，并支持模型输入 schema 与 dry-run 推理自检
 - 系统状态总览页，集中展示后端健康、数据规模、模型状态、导出能力和功能成熟度
 
@@ -64,7 +65,10 @@ npm run dev
 
 - 数据集规范：前端侧边栏“数据集规范”页面读取 `GET /imports/spec`，展示 DICOM 目录、CSV 文件、标签枚举和质控规则。
 - CSV 导入校验：在“影像上传”页上传 `patients.csv`、`studies.csv`、`nodules.csv`、`measurements.csv`，系统先做规范校验并返回报告。
-- CSV 一键入库：校验通过后可直接调用 `POST /imports/commit` 写入患者、检查、结节和测量数据；重复患者/检查/结节/测量会按稳定键更新。
+- CSV 导入预览：`POST /imports/preview` 会返回新增/更新数量、质控分、随访完整性、日期间隔和 DICOM 路径关联提示。
+- CSV 一键入库：校验和预览通过后可调用 `POST /imports/commit` 写入患者、检查、结节和测量数据；重复患者/检查/结节/测量会按稳定键更新。
+- 导入批次治理：`GET /imports/batches`、`GET /imports/batches/{batch_id}` 可查看批次和实体明细；`POST /imports/batches/{batch_id}/rollback` 可回滚已提交批次。
+- 测量来源追踪：测量记录区分 `demo`、`radiologist_report`、`imported_research_table`、`manual_annotation`、`roi_dicom` 等来源，并同步到随访点和测量表导出。
 - CSV 导出：总览页和病例详情页可下载 `cohort-table.csv`、`measurements.csv`、`research-table.csv`；其中 `cohort-table.csv` 不依赖 AI 分析结果，并保留结节维度的最新风险评分。
 - 研究数据包：总览页和病例详情页可下载 `research-package.zip`，内含三张 CSV、`imports-spec.json`、`model-status.json` 和 `metadata.json`。
 - 模型 artifact：将 TorchScript `temporal_model.pt` 或 ONNX `temporal_model.onnx` 放入 `backend/model_artifacts/`；TorchScript 需要安装 `torch`，ONNX 需要安装 `onnxruntime`。
@@ -74,8 +78,10 @@ npm run dev
 - 风险追踪：每次分析会在 `features_json.trace` 与 `research-table.csv` 中记录数据 schema、特征版本、模型版本、artifact/hash、推理时间和输入特征维度。
 - 系统总览：前端侧边栏“系统总览”页面读取 `GET /system/status`，集中展示后端健康、数据规模、模型模式、导出能力、最近活动、七步功能成熟度和下一步行动建议。
 - 报告确认：结构化报告页可调用 `PUT /reports/{report_id}` 保存医生编辑后的 Markdown、医生意见和随访建议，并可确认最终版；最终版默认锁定，支持后端 `.doc` 和打印 HTML 导出。
+- 报告审计：`GET /reports/{report_id}/versions` 和 `GET /reports/{report_id}/audit` 可查看报告版本与操作记录；最终版需要修订时可调用 `POST /reports/{report_id}/revisions` 创建新草稿。
+- DICOM 安全提示：上传 DICOM/zip 时会返回可用序列列表、选中序列 UID 和 PatientName/PatientID/AccessionNumber 等脱敏检查结果。
 
-- 后端 smoke 检查：可运行 `cd backend && python smoke_check.py` 快速验证 `/health`、`/imports/spec`、`/model/status` 和 `/system/status`。
+- 后端 smoke 检查：可运行 `cd backend && python smoke_check.py` 快速验证健康检查、导入预览/提交/批次/回滚、分析、报告版本/审计和系统状态。
 
 ## 后续扩展
 

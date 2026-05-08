@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import ImageSlice, Nodule, NoduleAnnotation, NoduleMeasurement, Patient, Study
 from ..pipeline.roi import measure_circular_roi
-from ..schemas import AnnotationMeasurementRead, NoduleAnnotationCreate, NoduleAnnotationRead
+from ..schemas import AnnotationMeasurementRead, NoduleAnnotationCreate, NoduleAnnotationRead, NoduleAnnotationUpdate
 
 router = APIRouter(prefix="/annotations", tags=["annotations"])
 
@@ -107,7 +107,7 @@ def create_measurement_from_annotation(annotation_id: int, db: Session = Depends
         measurement = existing
         message = "已更新该检查的主结节随访测量。"
     else:
-        measurement = NoduleMeasurement(nodule_id=nodule.id, study_id=study.id, thumbnail_seed=study.id)
+        measurement = NoduleMeasurement(nodule_id=nodule.id, study_id=study.id, thumbnail_seed=study.id, measurement_source="manual_annotation")
         db.add(measurement)
         message = "已从标注生成主结节随访测量。"
 
@@ -139,12 +139,37 @@ def create_measurement_from_annotation(annotation_id: int, db: Session = Depends
     measurement.lobulation_score = 0.0
     measurement.pleural_retraction_score = 0.0
     annotation.nodule_id = nodule.id
+    measurement.measurement_source = "roi_dicom" if roi_measurement else "manual_annotation"
 
     db.commit()
     db.refresh(annotation)
     db.refresh(measurement)
     db.refresh(nodule)
     return AnnotationMeasurementRead(annotation=annotation, measurement=measurement, nodule=nodule, message=message)
+
+
+@router.put("/{annotation_id}", response_model=NoduleAnnotationRead)
+def update_annotation(annotation_id: int, payload: NoduleAnnotationUpdate, db: Session = Depends(get_db)) -> NoduleAnnotation:
+    annotation = db.get(NoduleAnnotation, annotation_id)
+    if not annotation:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if payload.nodule_id is not None:
+        nodule = db.get(Nodule, payload.nodule_id)
+        if not nodule or nodule.patient_id != annotation.patient_id:
+            raise HTTPException(status_code=400, detail="Annotation nodule must belong to patient")
+    if not 0 <= payload.x_percent <= 100 or not 0 <= payload.y_percent <= 100:
+        raise HTTPException(status_code=400, detail="Annotation coordinates must be 0-100 percent")
+    if payload.diameter_mm <= 0:
+        raise HTTPException(status_code=400, detail="Nodule diameter must be positive")
+    annotation.nodule_id = payload.nodule_id
+    annotation.x_percent = payload.x_percent
+    annotation.y_percent = payload.y_percent
+    annotation.diameter_mm = payload.diameter_mm
+    annotation.nodule_type = payload.nodule_type
+    annotation.note = payload.note
+    db.commit()
+    db.refresh(annotation)
+    return annotation
 
 
 @router.delete("/{annotation_id}")

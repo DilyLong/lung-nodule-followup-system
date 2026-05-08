@@ -1,7 +1,7 @@
 import { ArrowLeft, CheckCircle, Copy, Download, Printer, Save } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Page } from '../App';
-import { fetchLatestReport, reportDocUrl, reportPrintUrl, updateReport, type Report } from '../lib/api';
+import { fetchLatestReport, fetchReportAudit, fetchReportVersions, reportDocUrl, reportPrintUrl, updateReport, createReportRevision, type Report, type ReportAuditLog, type ReportVersion } from '../lib/api';
 
 interface Props {
   patientId: number;
@@ -111,8 +111,21 @@ export default function ReportView({ patientId, setPage }: Props) {
   const [contentMarkdown, setContentMarkdown] = useState('');
   const [doctorOpinion, setDoctorOpinion] = useState('');
   const [followupPlan, setFollowupPlan] = useState('');
+  const [versions, setVersions] = useState<ReportVersion[]>([]);
+  const [auditLogs, setAuditLogs] = useState<ReportAuditLog[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+
+  async function loadReportAudit(nextReport: Report | null) {
+    if (!nextReport) {
+      setVersions([]);
+      setAuditLogs([]);
+      return;
+    }
+    const [nextVersions, nextAuditLogs] = await Promise.all([fetchReportVersions(nextReport.id), fetchReportAudit(nextReport.id)]);
+    setVersions(nextVersions);
+    setAuditLogs(nextAuditLogs);
+  }
 
   useEffect(() => {
     fetchLatestReport(patientId).then((nextReport) => {
@@ -120,6 +133,7 @@ export default function ReportView({ patientId, setPage }: Props) {
       setContentMarkdown(nextReport?.content_markdown ?? '');
       setDoctorOpinion(nextReport?.doctor_opinion ?? '');
       setFollowupPlan(nextReport?.followup_plan ?? '');
+      loadReportAudit(nextReport);
     });
   }, [patientId]);
 
@@ -140,7 +154,25 @@ export default function ReportView({ patientId, setPage }: Props) {
       setContentMarkdown(updated.content_markdown);
       setDoctorOpinion(updated.doctor_opinion);
       setFollowupPlan(updated.followup_plan);
+      await loadReportAudit(updated);
       setMessage(status === 'final' ? '已确认最终版报告。' : '草稿已保存。');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCreateRevision() {
+    if (!report) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      const revision = await createReportRevision(report.id);
+      setReport(revision);
+      setContentMarkdown(revision.content_markdown);
+      setDoctorOpinion(revision.doctor_opinion);
+      setFollowupPlan(revision.followup_plan);
+      await loadReportAudit(revision);
+      setMessage('已基于最终版创建新的修订草稿。');
     } finally {
       setSaving(false);
     }
@@ -185,6 +217,7 @@ export default function ReportView({ patientId, setPage }: Props) {
             </div>
             <div className="button-row">
               <button className="ghost" onClick={() => saveReport('draft')} disabled={saving || report.status === 'final'}><Save size={17} /> 保存草稿</button>
+              {report.status === 'final' && <button className="ghost" onClick={handleCreateRevision} disabled={saving}>创建修订版</button>}
               <button className="primary" onClick={() => saveReport('final')} disabled={saving || report.status === 'final'}><CheckCircle size={17} /> 确认最终版</button>
             </div>
           </div>
@@ -203,6 +236,31 @@ export default function ReportView({ patientId, setPage }: Props) {
               <textarea value={followupPlan} onChange={(event) => setFollowupPlan(event.target.value)} rows={5} disabled={report.status === 'final'} placeholder="填写或修改复查时间、MDT/手术/穿刺建议" />
             </label>
           </div>
+          <div className="report-editor-grid">
+            <div className="table-card validation-table">
+              <table>
+                <thead><tr><th>版本</th><th>状态</th><th>时间</th></tr></thead>
+                <tbody>
+                  {versions.map((version) => (
+                    <tr key={version.id}><td>v{version.version_number}</td><td>{version.status}</td><td><span>{new Date(version.created_at).toLocaleString()}</span></td></tr>
+                  ))}
+                  {versions.length === 0 && <tr><td colSpan={3}><span>暂无版本记录。</span></td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <div className="table-card validation-table">
+              <table>
+                <thead><tr><th>事件</th><th>说明</th><th>时间</th></tr></thead>
+                <tbody>
+                  {auditLogs.map((log) => (
+                    <tr key={log.id}><td>{log.event}</td><td><span>{log.message}</span></td><td><span>{new Date(log.created_at).toLocaleString()}</span></td></tr>
+                  ))}
+                  {auditLogs.length === 0 && <tr><td colSpan={3}><span>暂无审计记录。</span></td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </section>
       )}
 

@@ -21,6 +21,7 @@ class MeasurementRead(BaseModel):
     lobulation_score: float
     pleural_retraction_score: float
     thumbnail_seed: int
+    measurement_source: str = "demo"
 
 
 class ImageSliceRead(BaseModel):
@@ -175,6 +176,15 @@ class NoduleAnnotationCreate(BaseModel):
     note: str = ""
 
 
+class NoduleAnnotationUpdate(BaseModel):
+    nodule_id: int | None = None
+    x_percent: float
+    y_percent: float
+    diameter_mm: float
+    nodule_type: str = "未分类"
+    note: str = ""
+
+
 class AnnotationMeasurementRead(BaseModel):
     annotation: NoduleAnnotationRead
     measurement: MeasurementRead
@@ -288,6 +298,67 @@ class ImportCommitReport(BaseModel):
     patient_ids: list[int] = []
     message: str
 
+
+class ImportBatchRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    committed_at: datetime | None = None
+    rolled_back_at: datetime | None = None
+    status: str
+    qc_score: float
+    counts_json: str
+    issues_json: str
+    message: str
+
+
+class ImportBatchEntityRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    batch_id: int
+    entity_type: str
+    entity_id: int
+    action: str
+    stable_key: str
+    previous_json: str | None = None
+
+
+class ImportBatchDetail(BaseModel):
+    batch: ImportBatchRead
+    entities: list[ImportBatchEntityRead]
+
+
+class ImportPreviewReport(BaseModel):
+    validation: ImportValidationReport
+    counts: ImportCommitCounts
+    qc_score: float
+    qc_issues: list[ImportValidationIssue]
+    message: str
+
+
+class ReportVersionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    report_id: int
+    version_number: int
+    created_at: datetime
+    status: str
+    content_markdown: str
+    doctor_opinion: str
+    followup_plan: str
+
+
+class ReportAuditRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    report_id: int
+    created_at: datetime
+    event: str
+    message: str
 
 class ModelSelfCheckIssue(BaseModel):
     field: str

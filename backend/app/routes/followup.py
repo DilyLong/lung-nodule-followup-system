@@ -59,7 +59,7 @@ def get_patient_followup(patient_id: int, nodule_id: int | None = None, db: Sess
             max_hu=measurement.max_hu,
             roi_area_mm2=measurement.roi_area_mm2,
             solid_component_percent=measurement.solid_component_percent,
-            source="annotation" if study.file_name else "demo",
+            source=measurement.measurement_source,
         )
         for measurement, study in rows
     ]

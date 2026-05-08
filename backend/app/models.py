@@ -110,6 +110,7 @@ class NoduleMeasurement(Base):
     lobulation_score: Mapped[float] = mapped_column(Float)
     pleural_retraction_score: Mapped[float] = mapped_column(Float)
     thumbnail_seed: Mapped[int] = mapped_column(Integer, default=1)
+    measurement_source: Mapped[str] = mapped_column(String(64), default="demo")
 
     nodule: Mapped[Nodule] = relationship(back_populates="measurements")
     study: Mapped[Study] = relationship(back_populates="measurements")
@@ -133,6 +134,55 @@ class AnalysisResult(Base):
     features_json: Mapped[str] = mapped_column(Text)
 
     patient: Mapped[Patient] = relationship(back_populates="analyses")
+
+
+class ImportBatch(Base):
+    __tablename__ = "import_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    rolled_back_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="validated")
+    qc_score: Mapped[float] = mapped_column(Float, default=0.0)
+    counts_json: Mapped[str] = mapped_column(Text, default="{}")
+    issues_json: Mapped[str] = mapped_column(Text, default="[]")
+    message: Mapped[str] = mapped_column(Text, default="")
+
+
+class ImportBatchEntity(Base):
+    __tablename__ = "import_batch_entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("import_batches.id"), index=True)
+    entity_type: Mapped[str] = mapped_column(String(32))
+    entity_id: Mapped[int] = mapped_column(Integer, index=True)
+    action: Mapped[str] = mapped_column(String(32))
+    stable_key: Mapped[str] = mapped_column(String(256))
+    previous_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ReportVersion(Base):
+    __tablename__ = "report_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("reports.id"), index=True)
+    version_number: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    content_markdown: Mapped[str] = mapped_column(Text)
+    doctor_opinion: Mapped[str] = mapped_column(Text, default="")
+    followup_plan: Mapped[str] = mapped_column(Text, default="")
+
+
+class ReportAuditLog(Base):
+    __tablename__ = "report_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("reports.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    event: Mapped[str] = mapped_column(String(64))
+    message: Mapped[str] = mapped_column(Text)
 
 
 class Report(Base):

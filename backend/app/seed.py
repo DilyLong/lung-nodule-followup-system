@@ -120,6 +120,7 @@ def _ensure_measurement(db: Session, nodule: Nodule, study: Study, row: tuple, s
             lobulation_score=lobulation,
             pleural_retraction_score=retraction,
             thumbnail_seed=seed,
+            measurement_source="demo",
         )
     )
 
