@@ -578,6 +578,51 @@ export async function runModelSelfCheck() {
   return data;
 }
 
+export interface ModelTrainingReadiness {
+  ready: boolean;
+  eligible_sample_count: number;
+  positive_count: number;
+  negative_count: number;
+  excluded_count: number;
+  exclusions: Array<Record<string, unknown>>;
+  artifact_path: string;
+  artifact_exists: boolean;
+  training_report_path: string;
+  training_report_exists: boolean;
+  latest_report: null | Record<string, unknown>;
+}
+
+export interface ModelTrainingReport {
+  trained: boolean;
+  message: string;
+  operator: string;
+  eligible_sample_count: number;
+  positive_count: number;
+  negative_count: number;
+  excluded_count: number;
+  exclusions: Array<Record<string, unknown>>;
+  generated_at?: string | null;
+  model_version?: string | null;
+  artifact_path?: string | null;
+  training_report_path?: string | null;
+  train_sample_count?: number | null;
+  validation_sample_count?: number | null;
+  metrics?: Record<string, number> | null;
+  calibration_bins: Array<Record<string, unknown>>;
+  thresholds?: Record<string, number> | null;
+  feature_names: string[];
+  samples: Array<Record<string, unknown>>;
+}
+
+export async function fetchModelTrainingReadiness() {
+  const { data } = await api.get<ModelTrainingReadiness>('/model/training/readiness');
+  return data;
+}
+
+export async function runModelTraining(operator?: string) {
+  const { data } = await api.post<ModelTrainingReport>(`/model/training/run${operatorParam(operator)}`);
+  return data;
+}
 export interface SystemStatus {
   backend: {
     status: string;

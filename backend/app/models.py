@@ -87,6 +87,8 @@ class Nodule(Base):
     label: Mapped[str] = mapped_column(String(64))
     lobe: Mapped[str] = mapped_column(String(64))
     nodule_type: Mapped[str] = mapped_column(String(64))
+    clinical_label: Mapped[str] = mapped_column(String(32), default="待定")
+    pathology_label: Mapped[str] = mapped_column(String(64), default="未手术")
     baseline_impression: Mapped[str] = mapped_column(String(256))
 
     patient: Mapped[Patient] = relationship(back_populates="nodules")

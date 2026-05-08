@@ -16,7 +16,7 @@
 - 数据集规范页面，展示真实 DICOM 多期目录、CSV 字段、标签枚举和质控规则
 - 研究导出：基础队列表、测量表、分析研究表 CSV 与研究数据包 ZIP
 - 报告版本和审计记录，最终版锁定后可创建修订草稿
-- 模型接入状态页，检查 `.pt` / `.onnx` 权重、推理依赖、当前真实/代理模型模式，并支持模型输入 schema 与 dry-run 推理自检
+- 模型接入状态页，检查 `.pt` / `.onnx` 权重、队列训练 JSON 模型、推理依赖、当前真实/代理模型模式，并支持模型输入 schema、dry-run 推理自检和队列训练 readiness/run。
 - 系统状态总览页，集中展示后端健康、数据规模、模型状态、导出能力和功能成熟度
 
 当前暂无真实 CT 数据，因此系统内置模拟病例和模拟影像指标。后续可把 `backend/app/pipeline` 中的占位实现替换为真实 DICOM 读取、三维配准和 PyTorch 模型。
@@ -71,8 +71,10 @@ npm run dev
 - 测量来源追踪：测量记录区分 `demo`、`radiologist_report`、`imported_research_table`、`manual_annotation`、`roi_dicom` 等来源，并同步到随访点和测量表导出。
 - CSV 导出：总览页和病例详情页可下载 `cohort-table.csv`、`measurements.csv`、`research-table.csv`；其中 `cohort-table.csv` 不依赖 AI 分析结果，并保留结节维度的最新风险评分。
 - 研究数据包：总览页和病例详情页可下载 `research-package.zip`，内含三张 CSV、`imports-spec.json`、`model-status.json` 和 `metadata.json`。
-- 模型 artifact：将 TorchScript `temporal_model.pt` 或 ONNX `temporal_model.onnx` 放入 `backend/model_artifacts/`；TorchScript 需要安装 `torch`，ONNX 需要安装 `onnxruntime`。
-- 模型状态：前端侧边栏“模型状态”页面读取 `GET /model/status`，显示权重文件、`torch` / `onnxruntime` 依赖和当前推理模式。
+- 模型 artifact：将 TorchScript `temporal_model.pt` 或 ONNX `temporal_model.onnx` 放入 `backend/model_artifacts/`；TorchScript 需要安装 `torch`，ONNX 需要安装 `onnxruntime`。也可在模型状态页基于带标签队列生成 `temporal_model.json`，作为本地校准后的表格风险模型。
+- 模型训练标签：`nodules.csv` 可填写 `clinical_label` 与 `pathology_label`；训练样本至少需要 4 个带标签结节，并同时包含良性和恶性样本。
+- 模型状态：前端侧边栏“模型状态”页面读取 `GET /model/status`、`GET /model/training/readiness`，显示权重文件、训练 artifact、`torch` / `onnxruntime` 依赖和当前推理模式。
+- 模型训练：模型状态页可调用 `POST /model/training/run`，从当前队列的多期测量和结节标签训练/校准 `temporal_model.json`，并生成 `training_report.json`；推理优先级为 TorchScript、ONNX、JSON 模型、代理模型。
 - 模型自检：模型状态页可调用 `POST /model/self-check`，使用内置三期 synthetic temporal fixture 校验 `temporal-nodule-v1` 输入 schema、输出契约，并执行真实模型或代理 fallback dry-run。
 - 多结节分析：病例详情页可选择目标结节运行 `POST /analysis/{patient_id}/run?nodule_id=...`，每次分析结果记录 `nodule_id`，便于临床展示和回顾性研究表按结节追踪。
 - 风险追踪：每次分析会在 `features_json.trace` 与 `research-table.csv` 中记录数据 schema、特征版本、模型版本、artifact/hash、推理时间和输入特征维度。

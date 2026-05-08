@@ -18,7 +18,7 @@ with TemporaryDirectory() as temp_dir:
         files = {
             "patients": ("patients.csv", f"patient_code,name,sex,age,smoking_history,family_history,primary_diagnosis\n{code},Smoke测试,男,60,既往吸烟,无,肺结节随访\n"),
             "studies": ("studies.csv", f"patient_code,study_date,modality,dicom_relative_path,scanner,slice_thickness_mm,series_description\n{code},2026-01-01,CT,/dicom/smoke/1,Smoke CT,1.0,薄层肺窗\n{code},2026-04-01,CT,/dicom/smoke/2,Smoke CT,1.0,薄层肺窗\n"),
-            "nodules": ("nodules.csv", f"patient_code,nodule_id,nodule_label,lobe,nodule_type,baseline_impression\n{code},N1,Smoke结节,右上叶,部分实性,smoke check\n"),
+            "nodules": ("nodules.csv", f"patient_code,nodule_id,nodule_label,lobe,nodule_type,clinical_label,pathology_label,baseline_impression\n{code},N1,Smoke结节,右上叶,部分实性,进展,未手术,smoke check\n"),
             "measurements": ("measurements.csv", f"patient_code,study_date,nodule_id,diameter_mm,volume_mm3,mean_hu,solid_component_percent,spiculation_score,lobulation_score,pleural_retraction_score,measurement_source\n{code},2026-01-01,N1,8.0,268,-520,20,0.1,0.1,0.0,radiologist_report\n{code},2026-04-01,N1,9.2,407,-480,32,0.2,0.2,0.1,radiologist_report\n"),
         }
         return {name: (filename, content.encode("utf-8"), "text/csv") for name, (filename, content) in files.items()}
@@ -68,6 +68,15 @@ with TemporaryDirectory() as temp_dir:
             assert audit.json()[0]["operator"] == "Smoke测试"
             print(f"/reports/{report_id}/versions {versions.status_code}")
             print(f"/reports/{report_id}/audit {audit.status_code}")
+
+            readiness = client.get("/model/training/readiness")
+            readiness.raise_for_status()
+            assert readiness.json()["eligible_sample_count"] >= 1
+            training = client.post("/model/training/run?operator=Smoke测试")
+            training.raise_for_status()
+            assert training.json()["operator"] == "Smoke测试"
+            print(f"/model/training/readiness {readiness.status_code}")
+            print(f"/model/training/run {training.status_code}")
 
             rollback = client.post(f"/imports/batches/{batch_id}/rollback?operator=Smoke测试")
             rollback.raise_for_status()

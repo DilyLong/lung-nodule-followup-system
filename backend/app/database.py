@@ -31,6 +31,12 @@ def migrate_sqlite_schema() -> None:
                     conn.execute(text(f"ALTER TABLE nodule_measurements ADD COLUMN {name} FLOAT"))
             if "measurement_source" not in columns:
                 conn.execute(text("ALTER TABLE nodule_measurements ADD COLUMN measurement_source VARCHAR(64) DEFAULT 'demo'"))
+        if "nodules" in tables:
+            columns = [row[1] for row in conn.execute(text("PRAGMA table_info(nodules)"))]
+            if "clinical_label" not in columns:
+                conn.execute(text("ALTER TABLE nodules ADD COLUMN clinical_label VARCHAR(32) DEFAULT '待定'"))
+            if "pathology_label" not in columns:
+                conn.execute(text("ALTER TABLE nodules ADD COLUMN pathology_label VARCHAR(64) DEFAULT '未手术'"))
         if "analysis_results" in tables:
             columns = [row[1] for row in conn.execute(text("PRAGMA table_info(analysis_results)"))]
             if "nodule_id" not in columns:

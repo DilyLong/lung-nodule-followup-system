@@ -10,15 +10,44 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from ..settings import MODEL_ARTIFACT_DIR
 from .features import calculate_temporal_features
 
 INPUT_SCHEMA_VERSION = "temporal-nodule-v1"
 FEATURE_VERSION = "temporal-features-v1"
 DATA_SCHEMA_VERSION = "dataset-spec-v1"
 MODEL_VERSION = "surrogate-2026-05-07"
-ARTIFACT_DIR = Path(__file__).resolve().parents[2] / "model_artifacts"
+ARTIFACT_DIR = MODEL_ARTIFACT_DIR
 TORCH_ARTIFACT = ARTIFACT_DIR / "temporal_model.pt"
 ONNX_ARTIFACT = ARTIFACT_DIR / "temporal_model.onnx"
+JSON_ARTIFACT = ARTIFACT_DIR / "temporal_model.json"
+TRAINING_REPORT = ARTIFACT_DIR / "training_report.json"
+FEATURE_VECTOR_NAMES = [
+    "timepoint_count",
+    "age",
+    "has_smoking_history",
+    "nodule_type_pure_ground_glass",
+    "nodule_type_part_solid",
+    "nodule_type_solid",
+    "followup_days",
+    "diameter_change_mm",
+    "volume_change_percent",
+    "density_change_hu",
+    "solid_component_change_percent",
+    "annualized_diameter_growth_mm",
+    "volume_doubling_time_days",
+    "spiculation_delta",
+    "lobulation_delta",
+    "pleural_retraction_delta",
+    "baseline_diameter_mm",
+    "latest_diameter_mm",
+    "baseline_volume_mm3",
+    "latest_volume_mm3",
+    "baseline_mean_hu",
+    "latest_mean_hu",
+    "baseline_solid_component_percent",
+    "latest_solid_component_percent",
+]
 
 
 @dataclass
@@ -157,6 +186,10 @@ def _feature_vector(model_input: dict[str, Any]) -> np.ndarray:
     return np.asarray([values], dtype=np.float32)
 
 
+def feature_vector_from_input(model_input: dict[str, Any]) -> np.ndarray:
+    return _feature_vector(model_input)
+
+
 def _reshape_for_onnx(features: np.ndarray, expected_shape: list[Any]) -> np.ndarray:
     if len(expected_shape) == 1:
         expected = expected_shape[0]
@@ -259,6 +292,67 @@ def _inference_metadata(model_input: dict[str, Any], artifact_path: Path | None 
         "model_artifact_path": str(artifact_path) if artifact_path else None,
         "model_input_feature_count": int(_feature_vector(model_input).shape[1]),
     }
+
+
+def _json_model_contributions(features: np.ndarray, mean: np.ndarray, std: np.ndarray, weights: np.ndarray) -> list[dict[str, Any]]:
+    scaled = (features - mean) / np.where(std == 0, 1.0, std)
+    effects = scaled * weights
+    ordered = sorted(zip(FEATURE_VECTOR_NAMES, features, effects, strict=True), key=lambda item: abs(float(item[2])), reverse=True)
+    return [
+        {"key": key, "label": key, "value": round(float(value), 3), "weight": round(float(effect), 4), "points": round(float(effect), 4)}
+        for key, value, effect in ordered[:8]
+    ]
+
+
+class JsonArtifactModel:
+    def __init__(self, artifact_path: Path):
+        self.artifact_path = artifact_path
+        try:
+            self.artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ModelInferenceError("temporal_model.json cannot be read as a valid JSON artifact") from exc
+        if self.artifact.get("input_schema_version") != INPUT_SCHEMA_VERSION:
+            raise ModelSchemaError("JSON artifact input schema version mismatch")
+        required = {"feature_names", "mean", "std", "weights", "bias", "thresholds"}
+        missing = sorted(required - set(self.artifact))
+        if missing:
+            raise ModelSchemaError(f"JSON artifact missing fields: {', '.join(missing)}")
+        if self.artifact["feature_names"] != FEATURE_VECTOR_NAMES:
+            raise ModelSchemaError("JSON artifact feature names do not match current feature vector")
+
+    def predict(self, model_input: dict[str, Any]) -> dict[str, Any]:
+        if model_input.get("input_schema_version") != INPUT_SCHEMA_VERSION:
+            raise ModelSchemaError("input schema version mismatch")
+        features = _feature_vector(model_input).reshape(-1).astype(np.float64)
+        mean = np.asarray(self.artifact["mean"], dtype=np.float64)
+        std = np.asarray(self.artifact["std"], dtype=np.float64)
+        weights = np.asarray(self.artifact["weights"], dtype=np.float64)
+        if features.shape != mean.shape or features.shape != std.shape or features.shape != weights.shape:
+            raise ModelSchemaError("JSON artifact feature vector length mismatch")
+        std = np.where(std == 0, 1.0, std)
+        risk_score = round(float(_bounded_probability(float(((features - mean) / std) @ weights + float(self.artifact["bias"])))), 3)
+        thresholds = self.artifact.get("thresholds", {})
+        high = float(thresholds.get("high_lower", 0.68))
+        low = float(thresholds.get("low_upper", 0.38))
+        if risk_score >= high:
+            risk_level = "高风险"
+        elif risk_score >= low:
+            risk_level = "中风险"
+        else:
+            risk_level = "低风险"
+        return _normalize_model_output(
+            {
+                "risk_score": risk_score,
+                "risk_level": risk_level,
+                "model_name": self.artifact.get("model_name", "Calibrated temporal tabular risk model"),
+                "model_version": self.artifact.get("model_version"),
+                "contributions": _json_model_contributions(features, mean, std, weights),
+            },
+            model_input,
+            "real_json_loaded",
+            "json_logistic_regression",
+            self.artifact_path,
+        )
 
 
 class TorchArtifactModel:
@@ -587,6 +681,8 @@ def run_model_self_check() -> dict[str, Any]:
                 issues.append({"field": "model_artifact", "severity": "error", "message": inference.get("fallback_reason", "Real model dry-run failed")})
             elif inference_status == "surrogate_no_weights":
                 issues.append({"field": "model_artifact", "severity": "warning", "message": "No real model weights found; surrogate dry-run passed"})
+            elif inference_status == "real_json_loaded":
+                issues.append({"field": "model_artifact", "severity": "warning", "message": "JSON model is trained in-app from current cohort labels; validate externally before clinical use"})
             output_issues = _output_contract_issues(inference, expected_feature_count)
             checks.append(
                 {
@@ -618,6 +714,7 @@ def active_mode_message(mode: str) -> str:
     messages = {
         "real_torch_ready": "TorchScript artifact and torch dependency are available",
         "real_onnx_ready": "ONNX artifact and onnxruntime dependency are available",
+        "real_json_ready": "JSON calibrated temporal model artifact is available",
         "surrogate_no_weights": "No real artifact found; surrogate backend will be checked",
         "fallback_missing_dependency": "A real artifact exists but its runtime dependency is missing",
     }
@@ -629,6 +726,8 @@ def _artifact_model() -> tuple[Path, TemporalProgressionModel] | None:
         return TORCH_ARTIFACT, TorchArtifactModel(TORCH_ARTIFACT)
     if ONNX_ARTIFACT.exists():
         return ONNX_ARTIFACT, OnnxArtifactModel(ONNX_ARTIFACT)
+    if JSON_ARTIFACT.exists():
+        return JSON_ARTIFACT, JsonArtifactModel(JSON_ARTIFACT)
     return None
 
 
@@ -639,6 +738,8 @@ def _dependency_available(module_name: str) -> bool:
 def model_runtime_status() -> dict[str, Any]:
     torch_exists = TORCH_ARTIFACT.exists()
     onnx_exists = ONNX_ARTIFACT.exists()
+    json_exists = JSON_ARTIFACT.exists()
+    training_report_exists = TRAINING_REPORT.exists()
     torch_available = _dependency_available("torch")
     onnxruntime_available = _dependency_available("onnxruntime")
     if torch_exists and torch_available:
@@ -647,6 +748,9 @@ def model_runtime_status() -> dict[str, Any]:
     elif onnx_exists and onnxruntime_available:
         active_mode = "real_onnx_ready"
         active_backend = "onnxruntime"
+    elif json_exists:
+        active_mode = "real_json_ready"
+        active_backend = "json_logistic_regression"
     elif torch_exists and not torch_available:
         active_mode = "fallback_missing_dependency"
         active_backend = "deterministic_surrogate"
@@ -684,10 +788,31 @@ def model_runtime_status() -> dict[str, Any]:
                 "sha256": _artifact_hash(ONNX_ARTIFACT),
                 "status": "ready" if onnx_exists and onnxruntime_available else "missing_dependency" if onnx_exists else "missing",
             },
+            {
+                "name": JSON_ARTIFACT.name,
+                "path": str(JSON_ARTIFACT),
+                "format": "Calibrated JSON",
+                "exists": json_exists,
+                "dependency": "numpy",
+                "dependency_available": True,
+                "sha256": _artifact_hash(JSON_ARTIFACT),
+                "status": "ready" if json_exists else "missing",
+            },
+            {
+                "name": TRAINING_REPORT.name,
+                "path": str(TRAINING_REPORT),
+                "format": "Training report JSON",
+                "exists": training_report_exists,
+                "dependency": "none",
+                "dependency_available": True,
+                "sha256": _artifact_hash(TRAINING_REPORT),
+                "status": "ready" if training_report_exists else "missing",
+            },
         ],
         "dependencies": {
             "torch": torch_available,
             "onnxruntime": onnxruntime_available,
+            "numpy": True,
         },
         "fallback_model": {
             "name": TemporalSurrogateModel.model_name,
@@ -703,11 +828,14 @@ def predict_progression_risk(features: dict[str, Any], nodule_type: str, age: in
         artifact_path = TORCH_ARTIFACT if TORCH_ARTIFACT.exists() else ONNX_ARTIFACT
         return _surrogate_prediction(model_input, "fallback_missing_dependency", str(exc), artifact_path)
     except ModelInferenceError as exc:
-        artifact_path = TORCH_ARTIFACT if TORCH_ARTIFACT.exists() else ONNX_ARTIFACT
+        artifact_path = TORCH_ARTIFACT if TORCH_ARTIFACT.exists() else ONNX_ARTIFACT if ONNX_ARTIFACT.exists() else JSON_ARTIFACT
         return _surrogate_prediction(model_input, "fallback_load_error", str(exc), artifact_path)
+    except ModelSchemaError as exc:
+        artifact_path = TORCH_ARTIFACT if TORCH_ARTIFACT.exists() else ONNX_ARTIFACT if ONNX_ARTIFACT.exists() else JSON_ARTIFACT
+        return _surrogate_prediction(model_input, "fallback_schema_mismatch", str(exc), artifact_path)
 
     if artifact_model is None:
-        return _surrogate_prediction(model_input, "surrogate_no_weights", "No temporal_model.pt or temporal_model.onnx found in backend/model_artifacts")
+        return _surrogate_prediction(model_input, "surrogate_no_weights", "No temporal_model.pt, temporal_model.onnx, or temporal_model.json found in backend/model_artifacts")
 
     artifact_path, model = artifact_model
     try:

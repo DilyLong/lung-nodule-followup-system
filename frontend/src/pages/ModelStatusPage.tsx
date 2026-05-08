@@ -1,7 +1,7 @@
 import { AlertTriangle, ArrowLeft, BrainCircuit, CheckCircle, PlayCircle, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Page } from '../App';
-import { fetchModelRuntimeStatus, runModelSelfCheck, type ModelRuntimeStatus, type ModelSelfCheckReport } from '../lib/api';
+import { fetchModelRuntimeStatus, fetchModelTrainingReadiness, runModelSelfCheck, runModelTraining, type ModelRuntimeStatus, type ModelSelfCheckReport, type ModelTrainingReadiness, type ModelTrainingReport } from '../lib/api';
 
 interface Props {
   setPage: (page: Page) => void;
@@ -11,6 +11,7 @@ function activeModeText(mode: string) {
   const labels: Record<string, string> = {
     real_torch_ready: '真实 PyTorch 模型就绪',
     real_onnx_ready: '真实 ONNX 模型就绪',
+    real_json_ready: '队列训练 JSON 模型就绪',
     surrogate_no_weights: '未检测到真实权重，使用代理模型',
     fallback_missing_dependency: '检测到权重但缺少推理依赖，使用代理模型',
   };
@@ -21,6 +22,7 @@ function modelStatusText(status?: string) {
   const labels: Record<string, string> = {
     real_torch_loaded: '真实 PyTorch 模型 dry-run 通过',
     real_onnx_loaded: '真实 ONNX 模型 dry-run 通过',
+    real_json_loaded: '队列训练 JSON 模型 dry-run 通过',
     surrogate_no_weights: '代理模型 dry-run 通过',
     fallback_missing_dependency: '缺少推理依赖，已回退代理模型',
     fallback_load_error: '真实模型加载失败，已回退代理模型',
@@ -52,7 +54,7 @@ function checkNameText(name: string) {
 function previewValue(value: unknown) {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2);
-  if (typeof value === 'boolean') return value ? '是' : '否';
+  if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
 
@@ -66,14 +68,22 @@ function inputSourceText(source: string) {
 export default function ModelStatusPage({ setPage }: Props) {
   const [status, setStatus] = useState<ModelRuntimeStatus | null>(null);
   const [selfCheck, setSelfCheck] = useState<ModelSelfCheckReport | null>(null);
+  const [trainingReadiness, setTrainingReadiness] = useState<ModelTrainingReadiness | null>(null);
+  const [trainingReport, setTrainingReport] = useState<ModelTrainingReport | null>(null);
+  const [operator, setOperator] = useState('系统');
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
+  const [training, setTraining] = useState(false);
   const [error, setError] = useState('');
   const [checkError, setCheckError] = useState('');
+  const [trainingError, setTrainingError] = useState('');
 
   useEffect(() => {
-    fetchModelRuntimeStatus()
-      .then(setStatus)
+    Promise.all([fetchModelRuntimeStatus(), fetchModelTrainingReadiness()])
+      .then(([runtimeStatus, readiness]) => {
+        setStatus(runtimeStatus);
+        setTrainingReadiness(readiness);
+      })
       .catch(() => setError('无法读取模型状态，请确认后端服务已启动。'))
       .finally(() => setLoading(false));
   }, []);
@@ -89,6 +99,22 @@ export default function ModelStatusPage({ setPage }: Props) {
       setCheckError('模型自检失败，请确认后端服务已启动并查看后端日志。');
     } finally {
       setChecking(false);
+    }
+  }
+
+  async function handleTraining() {
+    setTraining(true);
+    setTrainingError('');
+    try {
+      const report = await runModelTraining(operator.trim() || '系统');
+      const [runtimeStatus, readiness] = await Promise.all([fetchModelRuntimeStatus(), fetchModelTrainingReadiness()]);
+      setTrainingReport(report);
+      setStatus(runtimeStatus);
+      setTrainingReadiness(readiness);
+    } catch {
+      setTrainingError('模型训练请求失败，请确认后端服务已启动并查看后端日志。');
+    } finally {
+      setTraining(false);
     }
   }
 
@@ -128,12 +154,73 @@ export default function ModelStatusPage({ setPage }: Props) {
           <p>真实模型需保持该输入契约。</p>
         </div>
         <div className="metric-card">
-          <span>代理模型版本</span>
-          <strong>{status.surrogate_model_version}</strong>
-          <p>{status.fallback_model.name}</p>
+          <span>队列训练样本</span>
+          <strong>{trainingReadiness?.eligible_sample_count ?? '—'}</strong>
+          <p>阳性 {trainingReadiness?.positive_count ?? '—'} / 阴性 {trainingReadiness?.negative_count ?? '—'}</p>
         </div>
       </section>
 
+      <section className="panel spec-section">
+        <h2><BrainCircuit size={19} /> 队列训练与校准</h2>
+        <p className="model-note">基于导入结节的临床/病理标签和多期测量训练本地 JSON 风险模型，用于进入真实数据训练闭环。</p>
+        <div className="training-toolbar">
+          <label>
+            操作者
+            <input value={operator} onChange={(event) => setOperator(event.target.value)} placeholder="请输入操作者" />
+          </label>
+          <button className="primary" onClick={handleTraining} disabled={training || !trainingReadiness?.ready}>
+            <PlayCircle size={17} /> {training ? '训练中...' : '运行队列训练'}
+          </button>
+        </div>
+        <div className="model-summary">
+          <div><span>训练就绪</span><strong>{trainingReadiness?.ready ? '是' : '否'}</strong></div>
+          <div><span>可用样本</span><strong>{trainingReadiness?.eligible_sample_count ?? '—'}</strong></div>
+          <div><span>阳性 / 阴性</span><strong>{trainingReadiness ? `${trainingReadiness.positive_count} / ${trainingReadiness.negative_count}` : '—'}</strong></div>
+          <div><span>排除结节</span><strong>{trainingReadiness?.excluded_count ?? '—'}</strong></div>
+          <div><span>JSON Artifact</span><strong>{trainingReadiness?.artifact_exists ? '已生成' : '未生成'}</strong></div>
+          <div><span>训练报告</span><strong>{trainingReadiness?.training_report_exists ? '已生成' : '未生成'}</strong></div>
+        </div>
+        {trainingError && <div className="info-banner"><AlertTriangle size={17} /> {trainingError}</div>}
+        {!trainingReadiness?.ready && <div className="info-banner"><AlertTriangle size={17} /> 至少需要 4 个带标签结节，且同时包含良性和恶性样本。请在 CSV 中补充 clinical_label / pathology_label 和多期测量后再训练。</div>}
+        {trainingReport && (
+          <div className={trainingReport.trained ? 'success-banner' : 'info-banner'}>
+            {trainingReport.trained ? <CheckCircle size={17} /> : <AlertTriangle size={17} />}
+            {trainingReport.message}
+          </div>
+        )}
+        {trainingReport?.metrics && (
+          <div className="model-summary">
+            {Object.entries(trainingReport.metrics).map(([key, value]) => (
+              <div key={key}><span>{key}</span><strong>{value.toFixed(3)}</strong></div>
+            ))}
+          </div>
+        )}
+        {(trainingReadiness?.latest_report || trainingReport) && (
+          <div className="spec-kv-grid">
+            <div><span>模型版本</span><strong>{previewValue(trainingReport?.model_version ?? trainingReadiness?.latest_report?.model_version)}</strong></div>
+            <div><span>Artifact 路径</span><strong>{trainingReport?.artifact_path ?? trainingReadiness?.artifact_path}</strong></div>
+            <div><span>训练报告路径</span><strong>{trainingReport?.training_report_path ?? trainingReadiness?.training_report_path}</strong></div>
+          </div>
+        )}
+        {(trainingReadiness?.exclusions.length ?? 0) > 0 && (
+          <div className="table-card validation-table">
+            <table>
+              <thead>
+                <tr><th>结节 ID</th><th>患者 ID</th><th>排除原因</th></tr>
+              </thead>
+              <tbody>
+                {trainingReadiness?.exclusions.slice(0, 8).map((item, index) => (
+                  <tr key={index}>
+                    <td>{previewValue(item.nodule_id)}</td>
+                    <td>{previewValue(item.patient_id)}</td>
+                    <td>{previewValue(item.reason)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
       <section className="panel spec-section">
         <h2><BrainCircuit size={19} /> 权重文件</h2>
         <p className="model-note">目录：{status.artifact_dir}</p>

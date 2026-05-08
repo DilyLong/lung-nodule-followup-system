@@ -182,6 +182,9 @@ td svg { vertical-align: middle; }
 .contribution-bar span { display: block; height: 100%; background: linear-gradient(90deg, #2563eb, #dc2626); }
 .contribution-item b { text-align: right; }
 
+.training-toolbar { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+.training-toolbar label { display: grid; gap: 6px; color: #334155; font-weight: 800; min-width: 220px; }
+.training-toolbar input { border: 1px solid #cbd5e1; border-radius: 12px; padding: 10px 12px; background: white; }
 .model-status-chip { margin-top: 12px; display: inline-flex; width: fit-content; border-radius: 999px; padding: 6px 10px; font-size: 13px; font-weight: 800; }
 .model-status-chip.real { background: #dcfce7; color: #166534; }
 .model-status-chip.proxy { background: #dbeafe; color: #1d4ed8; }

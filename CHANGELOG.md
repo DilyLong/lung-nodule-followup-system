@@ -4,6 +4,12 @@
 
 ### Added
 
+- 新增模型训练闭环：基于结节 `clinical_label` / `pathology_label` 与多期测量收集训练样本，提供 `/model/training/readiness` 和 `/model/training/run` 接口，生成 `temporal_model.json` 与 `training_report.json`。
+- 模型状态页新增队列训练与校准面板，展示样本量、阳性/阴性分布、排除原因、训练 artifact 和训练报告，并支持操作者记录后触发训练。
+- 推理模块新增本地 JSON 校准模型加载路径，真实模型优先级扩展为 TorchScript、ONNX、JSON 训练模型、代理模型。
+- 数据集规范和导入校验补充结节级 `clinical_label` / `pathology_label` 枚举检查，研究导出保留训练标签字段。
+- 后端 smoke 检查扩展覆盖模型训练 readiness/run 接口。
+
 - 新增真实数据导入治理闭环：CSV 导入预览、质控评分、导入批次表、实体级导入明细和批次回滚接口。
 - 上传页新增导入预览、质控问题展示、批次历史、批次明细和回滚操作。
 - 新增报告版本和审计记录，结构化报告页展示版本/事件历史，最终版报告支持创建修订草稿。

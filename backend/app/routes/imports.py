@@ -96,7 +96,7 @@ NUMERIC_FIELDS = {
 ENUM_FIELDS = {
     "patients.csv": {"sex": "sex"},
     "studies.csv": {"modality": "modality"},
-    "nodules.csv": {"nodule_type": "nodule_type"},
+    "nodules.csv": {"nodule_type": "nodule_type", "clinical_label": "clinical_label", "pathology_label": "pathology_label"},
     "measurements.csv": {"measurement_source": "measurement_source"},
 }
 DATE_FIELDS = {"patients.csv": ["surgery_date"], "studies.csv": ["study_date"], "measurements.csv": ["study_date"]}
@@ -375,11 +375,11 @@ def _upsert_import_data(data: dict[str, list[dict[str, str]]], db: Session, batc
         label = _value(row, "nodule_label", row["nodule_id"])
         nodule = db.query(Nodule).filter(Nodule.patient_id == patient.id, Nodule.label.in_([row["nodule_id"], label])).first()
         if nodule:
-            previous = _snapshot(nodule, ["label", "lobe", "nodule_type", "baseline_impression"])
+            previous = _snapshot(nodule, ["label", "lobe", "nodule_type", "clinical_label", "pathology_label", "baseline_impression"])
             counts.nodules_updated += 1
             action = "updated"
         else:
-            nodule = Nodule(patient_id=patient.id, label=label, lobe=row["lobe"], nodule_type=row["nodule_type"], baseline_impression="")
+            nodule = Nodule(patient_id=patient.id, label=label, lobe=row["lobe"], nodule_type=row["nodule_type"], clinical_label=_value(row, "clinical_label", "待定"), pathology_label=_value(row, "pathology_label", "未手术"), baseline_impression="")
             db.add(nodule)
             db.flush()
             previous = None
@@ -388,6 +388,8 @@ def _upsert_import_data(data: dict[str, list[dict[str, str]]], db: Session, batc
         nodule.label = label
         nodule.lobe = row["lobe"]
         nodule.nodule_type = row["nodule_type"]
+        nodule.clinical_label = _value(row, "clinical_label", "待定")
+        nodule.pathology_label = _value(row, "pathology_label", "未手术")
         nodule.baseline_impression = _value(row, "baseline_impression", "CSV 导入结节")
         nodules_by_key[(row["patient_code"], row["nodule_id"])] = nodule
         _track(db, batch, "nodule", nodule.id, action, f"{row['patient_code']}|{row['nodule_id']}", previous, operator)

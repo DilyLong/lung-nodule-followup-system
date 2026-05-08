@@ -59,6 +59,8 @@ class NoduleCreate(BaseModel):
     label: str
     lobe: str
     nodule_type: str
+    clinical_label: str = "待定"
+    pathology_label: str = "未手术"
     baseline_impression: str = ""
 
 
@@ -70,6 +72,8 @@ class NoduleRead(BaseModel):
     label: str
     lobe: str
     nodule_type: str
+    clinical_label: str = "待定"
+    pathology_label: str = "未手术"
     baseline_impression: str
     measurements: list[MeasurementRead] = []
 
@@ -364,6 +368,42 @@ class ReportAuditRead(BaseModel):
     event: str
     message: str
     operator: str = "系统"
+
+
+class ModelTrainingReadiness(BaseModel):
+    ready: bool
+    eligible_sample_count: int
+    positive_count: int
+    negative_count: int
+    excluded_count: int
+    exclusions: list[dict[str, Any]]
+    artifact_path: str
+    artifact_exists: bool
+    training_report_path: str
+    training_report_exists: bool
+    latest_report: dict[str, Any] | None = None
+
+
+class ModelTrainingReport(BaseModel):
+    trained: bool
+    message: str
+    operator: str
+    eligible_sample_count: int
+    positive_count: int
+    negative_count: int
+    excluded_count: int
+    exclusions: list[dict[str, Any]] = []
+    generated_at: str | None = None
+    model_version: str | None = None
+    artifact_path: str | None = None
+    training_report_path: str | None = None
+    train_sample_count: int | None = None
+    validation_sample_count: int | None = None
+    metrics: dict[str, float] | None = None
+    calibration_bins: list[dict[str, Any]] = []
+    thresholds: dict[str, float] | None = None
+    feature_names: list[str] = []
+    samples: list[dict[str, Any]] = []
 
 
 class ModelSelfCheckIssue(BaseModel):

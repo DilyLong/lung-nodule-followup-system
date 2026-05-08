@@ -67,6 +67,8 @@ def create_patient_nodule(patient_id: int, payload: NoduleCreate, db: Session = 
         label=payload.label,
         lobe=payload.lobe,
         nodule_type=payload.nodule_type,
+        clinical_label=payload.clinical_label,
+        pathology_label=payload.pathology_label,
         baseline_impression=payload.baseline_impression or "由医生手动新建",
     )
     db.add(nodule)
