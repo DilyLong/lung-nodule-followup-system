@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import AnalysisResult, ImportBatch, Nodule, NoduleMeasurement, Patient, Report, Study
 from ..pipeline.model import model_runtime_status
+from ..pipeline.training import training_readiness
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -118,6 +119,50 @@ def _measurement_sources(db: Session) -> dict[str, int]:
     return counts
 
 
+def _data_quality(db: Session) -> dict[str, Any]:
+    nodules = db.query(Nodule).all()
+    measurements = db.query(NoduleMeasurement).all()
+    studies = db.query(Study).all()
+    label_counts: dict[str, int] = {}
+    pathology_counts: dict[str, int] = {}
+    for nodule in nodules:
+        label_counts[nodule.clinical_label or "未填写"] = label_counts.get(nodule.clinical_label or "未填写", 0) + 1
+        pathology_counts[nodule.pathology_label or "未填写"] = pathology_counts.get(nodule.pathology_label or "未填写", 0) + 1
+    missing = {
+        "clinical_label": sum(1 for nodule in nodules if not nodule.clinical_label or nodule.clinical_label == "待定"),
+        "pathology_label": sum(1 for nodule in nodules if not nodule.pathology_label),
+        "volume_mm3": sum(1 for item in measurements if item.volume_mm3 is None or item.volume_mm3 <= 0),
+        "mean_hu": sum(1 for item in measurements if item.mean_hu is None),
+        "roi_area_mm2": sum(1 for item in measurements if item.roi_area_mm2 is None),
+        "dicom_slices": sum(1 for study in studies if len(study.slices) == 0),
+    }
+    followup_intervals = []
+    for patient in db.query(Patient).all():
+        ordered = sorted(patient.studies, key=lambda item: item.study_date)
+        for index in range(1, len(ordered)):
+            followup_intervals.append((ordered[index].study_date - ordered[index - 1].study_date).days)
+    readiness = training_readiness(db)
+    return {
+        "label_distribution": label_counts,
+        "pathology_distribution": pathology_counts,
+        "missing_fields": missing,
+        "followup_interval_days": {
+            "count": len(followup_intervals),
+            "min": min(followup_intervals) if followup_intervals else None,
+            "median": sorted(followup_intervals)[len(followup_intervals) // 2] if followup_intervals else None,
+            "max": max(followup_intervals) if followup_intervals else None,
+        },
+        "training_readiness": {
+            "ready": readiness["ready"],
+            "eligible_sample_count": readiness["eligible_sample_count"],
+            "positive_count": readiness["positive_count"],
+            "negative_count": readiness["negative_count"],
+            "excluded_count": readiness["excluded_count"],
+            "top_exclusions": readiness["exclusions"][:8],
+        },
+    }
+
+
 @router.get("/status")
 def get_system_status(db: Session = Depends(get_db)) -> dict[str, Any]:
     model_status = model_runtime_status()
@@ -141,6 +186,7 @@ def get_system_status(db: Session = Depends(get_db)) -> dict[str, Any]:
             "import_batch_count": db.query(ImportBatch).count(),
             "measurement_sources": _measurement_sources(db),
         },
+        "data_quality": _data_quality(db),
         "model": {
             "active_mode": model_status["active_mode"],
             "active_backend": model_status["active_backend"],

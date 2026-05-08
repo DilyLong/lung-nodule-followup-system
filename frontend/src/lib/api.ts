@@ -272,6 +272,11 @@ export async function createNoduleAnnotation(payload: NoduleAnnotationCreate) {
   return data;
 }
 
+export async function updateNoduleAnnotation(annotationId: number, payload: NoduleAnnotationCreate) {
+  const { data } = await api.put<NoduleAnnotation>(`/annotations/${annotationId}`, payload);
+  return data;
+}
+
 export async function deleteNoduleAnnotation(annotationId: number) {
   await api.delete(`/annotations/${annotationId}`);
 }
@@ -578,6 +583,24 @@ export async function runModelSelfCheck() {
   return data;
 }
 
+export interface DemoTrainingCohortResult {
+  loaded: boolean;
+  message: string;
+  synthetic: boolean;
+  case_count: number;
+  patients_created: number;
+  studies_created: number;
+  nodules_created: number;
+  measurements_created: number;
+  before: Record<string, number>;
+  after: Record<string, number>;
+}
+
+export async function loadDemoTrainingCohort() {
+  const { data } = await api.post<DemoTrainingCohortResult>('/model/training/demo-cohort');
+  return data;
+}
+
 export interface ModelTrainingReadiness {
   ready: boolean;
   eligible_sample_count: number;
@@ -639,6 +662,20 @@ export interface SystemStatus {
     final_report_count: number;
     import_batch_count: number;
     measurement_sources: Record<string, number>;
+  };
+  data_quality: {
+    label_distribution: Record<string, number>;
+    pathology_distribution: Record<string, number>;
+    missing_fields: Record<string, number>;
+    followup_interval_days: { count: number; min: number | null; median: number | null; max: number | null };
+    training_readiness: {
+      ready: boolean;
+      eligible_sample_count: number;
+      positive_count: number;
+      negative_count: number;
+      excluded_count: number;
+      top_exclusions: Array<Record<string, unknown>>;
+    };
   };
   model: {
     active_mode: string;

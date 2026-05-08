@@ -4,6 +4,11 @@
 
 ### Added
 
+- 新增 12 例 synthetic demo cohort，包含 16 个结节、48 条多期随访测量、良恶性训练标签和多结节场景，可在无真实数据时演示训练闭环。
+- 模型状态页新增“加载示例训练队列”入口，对应 `/model/training/demo-cohort`，可重载 synthetic cohort 后直接运行 readiness/run。
+- 结构化报告增强医生工作流：报告模板新增随访间隔、临床/病理标签、医生确认清单、指南参考和风险随访窗口，前端新增医生意见/随访计划模板填充。
+- 系统总览新增数据质量看板，展示标签分布、缺失字段、随访间隔、训练样本数和排除原因。
+- DICOM 浏览器新增肺窗、纵隔窗、骨窗和结节增强预设，支持编辑已有 ROI 标注后更新测量。
 - 新增模型训练闭环：基于结节 `clinical_label` / `pathology_label` 与多期测量收集训练样本，提供 `/model/training/readiness` 和 `/model/training/run` 接口，生成 `temporal_model.json` 与 `training_report.json`。
 - 模型状态页新增队列训练与校准面板，展示样本量、阳性/阴性分布、排除原因、训练 artifact 和训练报告，并支持操作者记录后触发训练。
 - 推理模块新增本地 JSON 校准模型加载路径，真实模型优先级扩展为 TorchScript、ONNX、JSON 训练模型、代理模型。

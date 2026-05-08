@@ -10,6 +10,7 @@ import {
   fetchStudyAnnotations,
   fetchStudyImageSeries,
   sliceImageUrl,
+  updateNoduleAnnotation,
   type MatchCandidate,
   type Nodule,
   type NoduleAnnotation,
@@ -45,8 +46,10 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
   const [measurementMessage, setMeasurementMessage] = useState('');
   const [candidateAnnotationId, setCandidateAnnotationId] = useState<number | null>(null);
   const [matchCandidates, setMatchCandidates] = useState<MatchCandidate[]>([]);
+  const [editingAnnotationId, setEditingAnnotationId] = useState<number | null>(null);
   const [windowCenter, setWindowCenter] = useState(0);
   const [windowWidth, setWindowWidth] = useState(100);
+  const [windowPreset, setWindowPreset] = useState('custom');
 
   useEffect(() => {
     const firstId = studiesWithSlices[0]?.id ?? null;
@@ -87,6 +90,13 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
     return annotations.filter((annotation) => annotation.slice_id === currentSlice.id);
   }, [annotations, currentSlice]);
 
+  const previousStudy = useMemo(() => {
+    if (!series) return null;
+    const ordered = [...studies].sort((a, b) => a.study_date.localeCompare(b.study_date));
+    const index = ordered.findIndex((study) => study.id === series.study_id);
+    return index > 0 ? ordered[index - 1] : null;
+  }, [series, studies]);
+
   function handleImageClick(event: MouseEvent<HTMLDivElement>) {
     if (!currentSlice) return;
     const target = event.currentTarget;
@@ -96,6 +106,28 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
     setDraft({ x_percent: Math.max(0, Math.min(100, x)), y_percent: Math.max(0, Math.min(100, y)) });
   }
 
+  function applyWindowPreset(preset: string) {
+    setWindowPreset(preset);
+    const presets: Record<string, [number, number]> = {
+      lung: [-600, 1500],
+      mediastinum: [40, 400],
+      bone: [300, 1800],
+      nodule: [-450, 1200],
+    };
+    const next = presets[preset];
+    if (next) {
+      setWindowCenter(next[0]);
+      setWindowWidth(next[1]);
+    }
+  }
+
+  function beginEditAnnotation(annotation: NoduleAnnotation) {
+    setEditingAnnotationId(annotation.id);
+    setDraft({ x_percent: annotation.x_percent, y_percent: annotation.y_percent });
+    setDiameterMm(String(annotation.diameter_mm));
+    setNoduleType(annotation.nodule_type);
+    setNote(annotation.note);
+  }
   async function handleSaveAnnotation() {
     if (!currentSlice || !studyId || !draft) return;
     const parsedDiameter = Number(diameterMm);
@@ -106,7 +138,7 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
     setSaving(true);
     setError('');
     try {
-      await createNoduleAnnotation({
+      const payload = {
         patient_id: patientId,
         study_id: studyId,
         slice_id: currentSlice.id,
@@ -116,9 +148,15 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
         diameter_mm: parsedDiameter,
         nodule_type: noduleType,
         note,
-      });
+      };
+      if (editingAnnotationId) {
+        await updateNoduleAnnotation(editingAnnotationId, payload);
+      } else {
+        await createNoduleAnnotation(payload);
+      }
       await loadAnnotations(studyId);
       setDraft(null);
+      setEditingAnnotationId(null);
       setNote('');
     } finally {
       setSaving(false);
@@ -258,10 +296,19 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
       )}
 
       {series && series.slices.length > 0 && (
-        <div className="window-controls">
-          <label>显示窗位<input type="range" min={-800} max={400} value={windowCenter} onChange={(event) => setWindowCenter(Number(event.target.value))} /></label>
-          <label>显示窗宽<input type="range" min={80} max={1800} value={windowWidth} onChange={(event) => setWindowWidth(Number(event.target.value))} /></label>
+        <>
+          <div className="window-preset-row">
+          <button className={windowPreset === 'lung' ? 'active' : ''} onClick={() => applyWindowPreset('lung')}>肺窗</button>
+          <button className={windowPreset === 'mediastinum' ? 'active' : ''} onClick={() => applyWindowPreset('mediastinum')}>纵隔窗</button>
+          <button className={windowPreset === 'bone' ? 'active' : ''} onClick={() => applyWindowPreset('bone')}>骨窗</button>
+          <button className={windowPreset === 'nodule' ? 'active' : ''} onClick={() => applyWindowPreset('nodule')}>结节增强</button>
+          {previousStudy && <span>上一期：{previousStudy.study_date} · {previousStudy.series_description}</span>}
         </div>
+          <div className="window-controls">
+            <label>显示窗位<input type="range" min={-800} max={400} value={windowCenter} onChange={(event) => { setWindowPreset('custom'); setWindowCenter(Number(event.target.value)); }} /></label>
+            <label>显示窗宽<input type="range" min={80} max={1800} value={windowWidth} onChange={(event) => { setWindowPreset('custom'); setWindowWidth(Number(event.target.value)); }} /></label>
+          </div>
+        </>
       )}
 
       {series && series.slices.length > 0 && (
@@ -303,7 +350,7 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
             </select>
           </label>
           <label>备注<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="如右上叶尖段、毛刺、胸膜牵拉" /></label>
-          <button className="primary" disabled={!draft || saving} onClick={handleSaveAnnotation}>{saving ? '保存中...' : '保存标注'}</button>
+          <button className="primary" disabled={!draft || saving} onClick={handleSaveAnnotation}>{saving ? '保存中...' : editingAnnotationId ? '更新标注' : '保存标注'}</button>
         </div>
         {measurementMessage && <p className="success-banner">{measurementMessage}</p>}
         <div className="annotation-list">
@@ -334,6 +381,9 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
                 )}
               </div>
               <div className="annotation-actions">
+                <button className="small-action" onClick={() => beginEditAnnotation(annotation)}>
+                  <RefreshCw size={15} /> 编辑标注
+                </button>
                 <button className="small-action" onClick={() => handleShowCandidates(annotation.id)}>
                   <Link2 size={15} /> 匹配既往
                 </button>

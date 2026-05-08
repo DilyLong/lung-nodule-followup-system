@@ -1,7 +1,7 @@
 import { AlertTriangle, ArrowLeft, BrainCircuit, CheckCircle, PlayCircle, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Page } from '../App';
-import { fetchModelRuntimeStatus, fetchModelTrainingReadiness, runModelSelfCheck, runModelTraining, type ModelRuntimeStatus, type ModelSelfCheckReport, type ModelTrainingReadiness, type ModelTrainingReport } from '../lib/api';
+import { fetchModelRuntimeStatus, fetchModelTrainingReadiness, loadDemoTrainingCohort, runModelSelfCheck, runModelTraining, type DemoTrainingCohortResult, type ModelRuntimeStatus, type ModelSelfCheckReport, type ModelTrainingReadiness, type ModelTrainingReport } from '../lib/api';
 
 interface Props {
   setPage: (page: Page) => void;
@@ -74,6 +74,8 @@ export default function ModelStatusPage({ setPage }: Props) {
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [training, setTraining] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoResult, setDemoResult] = useState<DemoTrainingCohortResult | null>(null);
   const [error, setError] = useState('');
   const [checkError, setCheckError] = useState('');
   const [trainingError, setTrainingError] = useState('');
@@ -99,6 +101,21 @@ export default function ModelStatusPage({ setPage }: Props) {
       setCheckError('模型自检失败，请确认后端服务已启动并查看后端日志。');
     } finally {
       setChecking(false);
+    }
+  }
+
+  async function handleLoadDemoCohort() {
+    setDemoLoading(true);
+    setTrainingError('');
+    try {
+      const result = await loadDemoTrainingCohort();
+      const readiness = await fetchModelTrainingReadiness();
+      setDemoResult(result);
+      setTrainingReadiness(readiness);
+    } catch {
+      setTrainingError('加载 synthetic demo cohort 失败，请确认后端服务已启动。');
+    } finally {
+      setDemoLoading(false);
     }
   }
 
@@ -168,6 +185,9 @@ export default function ModelStatusPage({ setPage }: Props) {
             操作者
             <input value={operator} onChange={(event) => setOperator(event.target.value)} placeholder="请输入操作者" />
           </label>
+          <button className="ghost" onClick={handleLoadDemoCohort} disabled={demoLoading}>
+            <PlayCircle size={17} /> {demoLoading ? '加载中...' : '加载示例训练队列'}
+          </button>
           <button className="primary" onClick={handleTraining} disabled={training || !trainingReadiness?.ready}>
             <PlayCircle size={17} /> {training ? '训练中...' : '运行队列训练'}
           </button>
@@ -180,6 +200,7 @@ export default function ModelStatusPage({ setPage }: Props) {
           <div><span>JSON Artifact</span><strong>{trainingReadiness?.artifact_exists ? '已生成' : '未生成'}</strong></div>
           <div><span>训练报告</span><strong>{trainingReadiness?.training_report_exists ? '已生成' : '未生成'}</strong></div>
         </div>
+        {demoResult && <div className="success-banner"><CheckCircle size={17} /> 已加载 synthetic demo cohort：{demoResult.case_count} 个病例，当前 {demoResult.after.nodule_count} 个结节 / {demoResult.after.measurement_count} 条测量，可直接运行训练演示。</div>}
         {trainingError && <div className="info-banner"><AlertTriangle size={17} /> {trainingError}</div>}
         {!trainingReadiness?.ready && <div className="info-banner"><AlertTriangle size={17} /> 至少需要 4 个带标签结节，且同时包含良性和恶性样本。请在 CSV 中补充 clinical_label / pathology_label 和多期测量后再训练。</div>}
         {trainingReport && (

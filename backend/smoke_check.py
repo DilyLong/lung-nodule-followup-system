@@ -69,6 +69,11 @@ with TemporaryDirectory() as temp_dir:
             print(f"/reports/{report_id}/versions {versions.status_code}")
             print(f"/reports/{report_id}/audit {audit.status_code}")
 
+            demo = client.post("/model/training/demo-cohort")
+            demo.raise_for_status()
+            assert demo.json()["loaded"] is True
+            print(f"/model/training/demo-cohort {demo.status_code}")
+
             readiness = client.get("/model/training/readiness")
             readiness.raise_for_status()
             assert readiness.json()["eligible_sample_count"] >= 1
@@ -77,6 +82,12 @@ with TemporaryDirectory() as temp_dir:
             assert training.json()["operator"] == "Smoke测试"
             print(f"/model/training/readiness {readiness.status_code}")
             print(f"/model/training/run {training.status_code}")
+
+            system_status = client.get("/system/status")
+            system_status.raise_for_status()
+            assert "data_quality" in system_status.json()
+            assert system_status.json()["data_quality"]["training_readiness"]["eligible_sample_count"] >= 1
+            print(f"/system/status data_quality {system_status.status_code}")
 
             rollback = client.post(f"/imports/batches/{batch_id}/rollback?operator=Smoke测试")
             rollback.raise_for_status()

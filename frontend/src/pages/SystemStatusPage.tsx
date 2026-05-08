@@ -11,6 +11,7 @@ function modeText(mode: string) {
   const labels: Record<string, string> = {
     real_torch_ready: '真实 PyTorch 模型就绪',
     real_onnx_ready: '真实 ONNX 模型就绪',
+    real_json_ready: '队列训练 JSON 模型就绪',
     surrogate_no_weights: '代理模型运行',
     fallback_missing_dependency: '权重存在但依赖缺失',
   };
@@ -151,6 +152,46 @@ export default function SystemStatusPage({ setPage }: Props) {
                 <div><strong>{item.name}</strong><span>{item.endpoint}</span></div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="detail-grid">
+        <div className="panel spec-section">
+          <h2><CheckCircle size={19} /> 数据质量看板</h2>
+          <div className="status-grid">
+            <div className="status-card"><span>可训练样本</span><strong>{status.data_quality.training_readiness.eligible_sample_count}</strong></div>
+            <div className="status-card"><span>阳性 / 阴性</span><strong>{status.data_quality.training_readiness.positive_count} / {status.data_quality.training_readiness.negative_count}</strong></div>
+            <div className="status-card"><span>排除样本</span><strong>{status.data_quality.training_readiness.excluded_count}</strong></div>
+            <div className="status-card"><span>随访间隔中位数</span><strong>{status.data_quality.followup_interval_days.median ?? '—'} 天</strong></div>
+          </div>
+        </div>
+        <div className="panel spec-section">
+          <h2>标签分布</h2>
+          <div className="status-grid">
+            {Object.entries(status.data_quality.label_distribution).map(([label, count]) => (
+              <div className="status-card" key={label}><span>{label}</span><strong>{count}</strong></div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="detail-grid">
+        <div className="panel spec-section">
+          <h2>缺失字段</h2>
+          <div className="status-grid">
+            {Object.entries(status.data_quality.missing_fields).map(([field, count]) => (
+              <div className="status-card" key={field}><span>{field}</span><strong>{count}</strong></div>
+            ))}
+          </div>
+        </div>
+        <div className="panel spec-section">
+          <h2>训练排除原因</h2>
+          <div className="readiness-list">
+            {status.data_quality.training_readiness.top_exclusions.map((item, index) => (
+              <div key={index}><span className="status-dot missing" /><div><strong>结节 {String(item.nodule_id ?? '-')}</strong><span>{String(item.reason ?? 'unknown')}</span></div></div>
+            ))}
+            {status.data_quality.training_readiness.top_exclusions.length === 0 && <div><span className="status-dot ok" /><div><strong>暂无排除样本</strong><span>当前训练队列字段完整。</span></div></div>}
           </div>
         </div>
       </section>

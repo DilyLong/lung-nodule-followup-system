@@ -106,6 +106,14 @@ function statusText(report: Report) {
   return '草稿，可继续编辑';
 }
 
+function defaultDoctorOpinion(report: Report) {
+  return `已核对目标结节跨期匹配、DICOM/报告来源与 AI 风险解释。当前建议以 ${report.followup_plan || 'AI 推荐随访方案'} 为基础，结合患者意愿和 MDT 讨论确认。`;
+}
+
+function defaultFollowupPlan(report: Report) {
+  return report.followup_plan || '建议按风险分层安排薄层胸部 CT 复查，并在复查后重新运行同一目标结节时序分析。';
+}
+
 export default function ReportView({ patientId, setPage }: Props) {
   const [report, setReport] = useState<Report | null>(null);
   const [contentMarkdown, setContentMarkdown] = useState('');
@@ -217,6 +225,8 @@ export default function ReportView({ patientId, setPage }: Props) {
               <span className={`model-status-chip ${report.status === 'final' ? 'real' : 'fallback'}`}>{statusText(report)}</span>
             </div>
             <div className="button-row">
+              <button className="ghost" onClick={() => setDoctorOpinion(defaultDoctorOpinion(report))} disabled={report.status === 'final'}>填入确认意见模板</button>
+              <button className="ghost" onClick={() => setFollowupPlan(defaultFollowupPlan(report))} disabled={report.status === 'final'}>填入随访计划模板</button>
               <button className="ghost" onClick={() => saveReport('draft')} disabled={saving || report.status === 'final'}><Save size={17} /> 保存草稿</button>
               {report.status === 'final' && <button className="ghost" onClick={handleCreateRevision} disabled={saving}>创建修订版</button>}
               <button className="primary" onClick={() => saveReport('final')} disabled={saving || report.status === 'final'}><CheckCircle size={17} /> 确认最终版</button>
@@ -231,6 +241,10 @@ export default function ReportView({ patientId, setPage }: Props) {
             报告正文 Markdown
             <textarea value={contentMarkdown} onChange={(event) => setContentMarkdown(event.target.value)} rows={16} disabled={report.status === 'final'} />
           </label>
+          <div className="report-checklist">
+            <strong>最终确认前建议核对</strong>
+            <span>DICOM 原片 / 历史报告 / 目标结节跨期匹配 / ROI 测量 / 随访窗口 / 患者危险因素</span>
+          </div>
           <div className="report-editor-grid">
             <label>
               医生意见

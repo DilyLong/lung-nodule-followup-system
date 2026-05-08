@@ -225,6 +225,10 @@ td svg { vertical-align: middle; }
 .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .action-card { border: 1px solid #e2e8f0; border-radius: 14px; background: #f8fafc; padding: 14px; display: grid; gap: 8px; }
 .action-card.warning { border-color: #fed7aa; background: #fff7ed; }
+.window-preset-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.window-preset-row button { border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; border-radius: 999px; padding: 8px 10px; cursor: pointer; font-weight: 800; }
+.window-preset-row button.active { background: #2563eb; color: white; border-color: #2563eb; }
+.window-preset-row span { color: #64748b; font-size: 13px; }
 .action-card strong { color: #0f172a; }
 .action-card span { color: #64748b; font-size: 13px; line-height: 1.5; }
 .dependency-ok { color: #166534; display: inline-flex; align-items: center; gap: 6px; font-weight: 800; }
@@ -249,6 +253,11 @@ td svg { vertical-align: middle; }
 .inline-check { display: inline-flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 8px !important; font-weight: 700; color: #334155; }
 .inline-check input { width: auto; }
 .small-action.danger:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.report-checklist { display: grid; gap: 6px; background: #f8fafc; border: 1px solid #bfdbfe; border-radius: 14px; padding: 12px; color: #334155; }
+.report-checklist strong { color: #0f172a; }
+.report-checklist span { color: #475569; }
+.report-editor .button-row .ghost { white-space: nowrap; }
 
 @media print {
   :root { background: white; color: #111827; }

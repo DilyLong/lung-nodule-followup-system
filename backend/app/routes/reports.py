@@ -43,6 +43,14 @@ def _model_explanation_markdown(analysis: AnalysisResult) -> str:
 """
 
 
+def _followup_interval_summary(studies: list[Study]) -> str:
+    ordered = sorted(studies, key=lambda item: item.study_date)
+    if len(ordered) < 2:
+        return "随访时间点不足，建议补充既往或后续薄层 CT。"
+    intervals = [(ordered[index].study_date - ordered[index - 1].study_date).days for index in range(1, len(ordered))]
+    return "；".join(f"T{index}→T{index + 1}: {days} 天" for index, days in enumerate(intervals, start=1))
+
+
 def _target_nodule(patient: Patient, analysis: AnalysisResult) -> Nodule | None:
     if analysis.nodule_id is not None:
         for nodule in patient.nodules:
@@ -68,6 +76,16 @@ def _structured_recommendation(analysis: AnalysisResult) -> dict[str, str]:
         payload = {}
     recommendation = payload.get("recommendation")
     return recommendation if isinstance(recommendation, dict) else {}
+
+
+def _risk_followup_window(level: str) -> str:
+    if level == "高风险":
+        return "1–3 个月内复查或 MDT 评估"
+    if level == "中风险":
+        return "3–6 个月复查薄层 CT"
+    return "6–12 个月复查薄层 CT，稳定后延长间隔"
+
+
 def build_report_markdown(patient: Patient, analysis: AnalysisResult) -> str:
     nodule = _target_nodule(patient, analysis)
     studies = sorted(patient.studies, key=lambda item: item.study_date)
@@ -107,7 +125,10 @@ def build_report_markdown(patient: Patient, analysis: AnalysisResult) -> str:
 
 - 结节位置：{nodule.lobe if nodule else '未记录'}
 - 结节类型：{nodule.nodule_type if nodule else '未记录'}
+- 临床标签：{nodule.clinical_label if nodule else '未记录'}
+- 病理标签：{nodule.pathology_label if nodule else '未记录'}
 - 基线描述：{nodule.baseline_impression if nodule else '未记录'}
+- 随访间隔：{_followup_interval_summary(studies)}
 
 ## 多期 CT 定量对比
 
@@ -126,6 +147,16 @@ def build_report_markdown(patient: Patient, analysis: AnalysisResult) -> str:
 - AI 风险分层：{analysis.risk_level}
 
 {_model_explanation_markdown(analysis)}
+## 医生确认清单
+
+| 确认项目 | 状态/说明 |
+|---|---|
+| 原始 DICOM 与历史报告已核对 | 待医生确认 |
+| 目标结节跨期匹配一致性 | 待医生确认 |
+| ROI/测量误差是否可接受 | 待医生确认 |
+| 指南建议是否适合患者整体情况 | 待医生确认 |
+| 建议随访窗口 | {_risk_followup_window(analysis.risk_level)} |
+
 ## AI 风险评分、指南参考与医生确认
 
 | 类别 | 内容 |
