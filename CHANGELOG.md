@@ -4,6 +4,9 @@
 
 ### Added
 
+- 新增演示流程控制台：侧边栏“演示流程”提供 8 分钟 Demo Walkthrough、重置演示状态和预生成分析/报告入口。
+- 新增 `/demo/walkthrough`、`/demo/reset`、`/demo/prepare` 接口，可清理 synthetic demo 的分析/报告/训练 artifact，并为代表病例预生成分析和草稿报告。
+
 - 新增 12 例 synthetic demo cohort，包含 16 个结节、48 条多期随访测量、良恶性训练标签和多结节场景，可在无真实数据时演示训练闭环。
 - 模型状态页新增“加载示例训练队列”入口，对应 `/model/training/demo-cohort`，可重载 synthetic cohort 后直接运行 readiness/run。
 - 结构化报告增强医生工作流：报告模板新增随访间隔、临床/病理标签、医生确认清单、指南参考和风险随访窗口，前端新增医生意见/随访计划模板填充。

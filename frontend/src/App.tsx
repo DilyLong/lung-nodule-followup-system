@@ -1,7 +1,8 @@
-import { Activity, BrainCircuit, Database, FileText, FolderTree, Server, Upload } from 'lucide-react';
+import { Activity, BrainCircuit, Database, FileText, FolderTree, PlayCircle, Server, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import Dashboard from './pages/Dashboard';
 import DatasetSpecification from './pages/DatasetSpecification';
+import DemoWalkthroughPage from './pages/DemoWalkthroughPage';
 import ModelStatusPage from './pages/ModelStatusPage';
 import PatientDetail from './pages/PatientDetail';
 import ReportView from './pages/ReportView';
@@ -12,6 +13,7 @@ export type Page =
   | { name: 'dashboard' }
   | { name: 'patient'; patientId: number }
   | { name: 'upload'; patientId?: number }
+  | { name: 'demoWalkthrough' }
   | { name: 'datasetSpec' }
   | { name: 'modelStatus' }
   | { name: 'systemStatus' }
@@ -38,6 +40,9 @@ export default function App() {
           <button className={page.name === 'dashboard' ? 'active' : ''} onClick={() => setPage({ name: 'dashboard' })}>
             <Database size={18} /> 病例工作台
           </button>
+          <button className={page.name === 'demoWalkthrough' ? 'active' : ''} onClick={() => setPage({ name: 'demoWalkthrough' })}>
+            <PlayCircle size={18} /> 演示流程
+          </button>
           <button className={page.name === 'upload' ? 'active' : ''} onClick={() => setPage({ name: 'upload' })}>
             <Upload size={18} /> 影像上传
           </button>
@@ -59,6 +64,7 @@ export default function App() {
         </div>
       </aside>
       <main className="main-panel">
+        {page.name === 'demoWalkthrough' && <DemoWalkthroughPage setPage={setPage} />}
         {page.name === 'dashboard' && <Dashboard setPage={setPage} />}
         {page.name === 'patient' && <PatientDetail patientId={page.patientId} setPage={setPage} />}
         {page.name === 'upload' && <UploadStudy patientId={page.patientId} setPage={setPage} />}

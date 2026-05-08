@@ -534,6 +534,48 @@ export async function fetchModelRuntimeStatus() {
   return data;
 }
 
+export interface DemoWalkthroughStep {
+  order: number;
+  page: string;
+  action: string;
+  expected: string;
+}
+
+export interface DemoWalkthrough {
+  title: string;
+  summary: string;
+  readiness: ModelTrainingReadiness;
+  steps: DemoWalkthroughStep[];
+}
+
+export interface DemoResetResult {
+  reset: boolean;
+  message: string;
+  cleared: Record<string, number>;
+  seeded: Record<string, unknown>;
+}
+
+export interface DemoPrepareResult {
+  prepared: boolean;
+  seeded: Record<string, unknown>;
+  training: ModelTrainingReport;
+  created: Array<{ patient_id: number; patient_code: string; nodule_id: number; analysis_id: number; report_id: number; risk_level: string; risk_score: number }>;
+}
+
+export async function fetchDemoWalkthrough() {
+  const { data } = await api.get<DemoWalkthrough>('/demo/walkthrough');
+  return data;
+}
+
+export async function resetDemoState() {
+  const { data } = await api.post<DemoResetResult>('/demo/reset');
+  return data;
+}
+
+export async function prepareDemoState() {
+  const { data } = await api.post<DemoPrepareResult>('/demo/prepare');
+  return data;
+}
 export interface ModelSelfCheckIssue {
   field: string;
   severity: 'error' | 'warning' | string;

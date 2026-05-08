@@ -83,6 +83,20 @@ with TemporaryDirectory() as temp_dir:
             print(f"/model/training/readiness {readiness.status_code}")
             print(f"/model/training/run {training.status_code}")
 
+            walkthrough = client.get("/demo/walkthrough")
+            walkthrough.raise_for_status()
+            assert len(walkthrough.json()["steps"]) >= 6
+            reset = client.post("/demo/reset")
+            reset.raise_for_status()
+            assert reset.json()["reset"] is True
+            prepare = client.post("/demo/prepare")
+            prepare.raise_for_status()
+            assert prepare.json()["prepared"] is True
+            assert len(prepare.json()["created"]) >= 1
+            print(f"/demo/walkthrough {walkthrough.status_code}")
+            print(f"/demo/reset {reset.status_code}")
+            print(f"/demo/prepare {prepare.status_code}")
+
             system_status = client.get("/system/status")
             system_status.raise_for_status()
             assert "data_quality" in system_status.json()

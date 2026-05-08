@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, SessionLocal, engine, migrate_sqlite_schema
-from .routes import analysis, annotations, exports, followup, imaging, imports, matching, model_status, patients, reports, system_status, uploads
+from .routes import analysis, annotations, demo, exports, followup, imaging, imports, matching, model_status, patients, reports, system_status, uploads
 from .seed import seed_demo_data
 
 app = FastAPI(
@@ -46,5 +46,6 @@ app.include_router(analysis.router)
 app.include_router(reports.router)
 app.include_router(exports.router)
 app.include_router(imports.router)
+app.include_router(demo.router)
 app.include_router(model_status.router)
 app.include_router(system_status.router)

@@ -54,12 +54,14 @@ npm run dev
 
 ## 演示流程
 
-1. 进入病例总览页。
-2. 打开任一肺结节随访病例。
-3. 查看 T1/T2/T3 多期 CT 指标和模拟配准对比。
-4. 选择目标结节并点击“运行目标结节分析”。
-5. 查看 AI 风险评分、个性化随访建议、模型解释和版本追踪信息。
-6. 生成结构化报告，编辑医生意见和随访计划，保存草稿或确认最终版。
+0. 进入侧边栏“演示流程”，点击“一键重置演示状态”，再点击“预生成分析和报告”。
+1. 进入“系统总览”，查看数据质量看板、最近分析和最近报告。
+2. 进入“模型状态”，运行队列训练和模型自检，展示 JSON 风险模型闭环。
+3. 进入病例总览页，打开代表性 synthetic 病例。
+4. 查看 T1/T2/T3 多期 CT 指标和模拟配准对比。
+5. 选择目标结节并点击“运行目标结节分析”。
+6. 查看 AI 风险评分、个性化随访建议、模型解释和版本追踪信息。
+7. 生成结构化报告，填入医生意见/随访计划模板，保存草稿或确认最终版。
 
 ## 真实数据与模型接入准备
 
@@ -72,6 +74,7 @@ npm run dev
 - CSV 导出：总览页和病例详情页可下载 `cohort-table.csv`、`measurements.csv`、`research-table.csv`；其中 `cohort-table.csv` 不依赖 AI 分析结果，并保留结节维度的最新风险评分。
 - 研究数据包：总览页和病例详情页可下载 `research-package.zip`，内含三张 CSV、`imports-spec.json`、`model-status.json` 和 `metadata.json`。
 - 模型 artifact：将 TorchScript `temporal_model.pt` 或 ONNX `temporal_model.onnx` 放入 `backend/model_artifacts/`；TorchScript 需要安装 `torch`，ONNX 需要安装 `onnxruntime`。也可在模型状态页基于带标签队列生成 `temporal_model.json`，作为本地校准后的表格风险模型。
+- Demo 控制台：侧边栏“演示流程”页面读取 `GET /demo/walkthrough`，提供 8 分钟演示脚本，并可调用 `POST /demo/reset` 清理 synthetic 分析/报告/训练 artifact、调用 `POST /demo/prepare` 预生成代表病例分析和草稿报告。
 - Synthetic demo cohort：首次启动自动写入 12 个模拟患者、16 个结节和 48 条多期随访测量，包含良恶性训练标签，可在无真实数据时演示训练闭环。
 - 训练演示模式：模型状态页可调用 `POST /model/training/demo-cohort` 重载 synthetic demo cohort，再运行 readiness/run 完成 JSON 模型训练演示。
 - 模型训练标签：`nodules.csv` 可填写 `clinical_label` 与 `pathology_label`；训练样本至少需要 4 个带标签结节，并同时包含良性和恶性样本。
