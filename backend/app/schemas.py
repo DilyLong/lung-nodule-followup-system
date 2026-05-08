@@ -291,14 +291,6 @@ class ImportCommitCounts(BaseModel):
     measurements_updated: int = 0
 
 
-class ImportCommitReport(BaseModel):
-    committed: bool
-    validation: ImportValidationReport
-    counts: ImportCommitCounts
-    patient_ids: list[int] = []
-    message: str
-
-
 class ImportBatchRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -311,6 +303,7 @@ class ImportBatchRead(BaseModel):
     counts_json: str
     issues_json: str
     message: str
+    operator: str = "系统"
 
 
 class ImportBatchEntityRead(BaseModel):
@@ -323,11 +316,21 @@ class ImportBatchEntityRead(BaseModel):
     action: str
     stable_key: str
     previous_json: str | None = None
+    operator: str = "系统"
 
 
 class ImportBatchDetail(BaseModel):
     batch: ImportBatchRead
     entities: list[ImportBatchEntityRead]
+
+
+class ImportCommitReport(BaseModel):
+    committed: bool
+    validation: ImportValidationReport
+    counts: ImportCommitCounts
+    patient_ids: list[int] = []
+    message: str
+    batch: ImportBatchRead | None = None
 
 
 class ImportPreviewReport(BaseModel):
@@ -349,6 +352,7 @@ class ReportVersionRead(BaseModel):
     content_markdown: str
     doctor_opinion: str
     followup_plan: str
+    operator: str = "系统"
 
 
 class ReportAuditRead(BaseModel):
@@ -359,6 +363,8 @@ class ReportAuditRead(BaseModel):
     created_at: datetime
     event: str
     message: str
+    operator: str = "系统"
+
 
 class ModelSelfCheckIssue(BaseModel):
     field: str

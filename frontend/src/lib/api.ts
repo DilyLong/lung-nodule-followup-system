@@ -1,5 +1,15 @@
 import axios from 'axios';
 
+export function errorMessage(error: unknown, fallback: string) {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (detail?.message) return detail.message;
+    if (!error.response) return '后端服务未连接，请确认 FastAPI 已在 8000 端口启动。';
+  }
+  return fallback;
+}
+
 export const api = axios.create({
   baseURL: 'http://127.0.0.1:8000',
 });
@@ -170,6 +180,7 @@ export interface ReportVersion {
   content_markdown: string;
   doctor_opinion: string;
   followup_plan: string;
+  operator: string;
 }
 
 export interface ReportAuditLog {
@@ -178,6 +189,11 @@ export interface ReportAuditLog {
   created_at: string;
   event: string;
   message: string;
+  operator: string;
+}
+
+function operatorParam(operator?: string) {
+  return operator ? `?operator=${encodeURIComponent(operator)}` : '';
 }
 
 export async function fetchReportVersions(reportId: number) {
@@ -190,8 +206,8 @@ export async function fetchReportAudit(reportId: number) {
   return data;
 }
 
-export async function createReportRevision(reportId: number) {
-  const { data } = await api.post<Report>(`/reports/${reportId}/revisions`);
+export async function createReportRevision(reportId: number, operator?: string) {
+  const { data } = await api.post<Report>(`/reports/${reportId}/revisions${operatorParam(operator)}`);
   return data;
 }
 
@@ -218,8 +234,8 @@ export async function runAnalysis(patientId: number, noduleId?: number | null) {
   return data;
 }
 
-export async function createReport(analysisId: number) {
-  const { data } = await api.post<Report>(`/reports/${analysisId}`);
+export async function createReport(analysisId: number, operator?: string) {
+  const { data } = await api.post<Report>(`/reports/${analysisId}${operatorParam(operator)}`);
   return data;
 }
 
@@ -231,8 +247,8 @@ export function reportPrintUrl(reportId: number) {
   return `${api.defaults.baseURL}/reports/${reportId}/print.html`;
 }
 
-export async function updateReport(reportId: number, payload: ReportUpdatePayload) {
-  const { data } = await api.put<Report>(`/reports/${reportId}`, payload);
+export async function updateReport(reportId: number, payload: ReportUpdatePayload, operator?: string) {
+  const { data } = await api.put<Report>(`/reports/${reportId}${operatorParam(operator)}`, payload);
   return data;
 }
 
@@ -379,22 +395,6 @@ export interface ImportCommitCounts {
   measurements_updated: number;
 }
 
-export interface ImportCommitReport {
-  committed: boolean;
-  validation: ImportValidationReport;
-  counts: ImportCommitCounts;
-  patient_ids: number[];
-  message: string;
-}
-
-export interface ImportPreviewReport {
-  validation: ImportValidationReport;
-  counts: ImportCommitCounts;
-  qc_score: number;
-  qc_issues: ImportValidationIssue[];
-  message: string;
-}
-
 export interface ImportBatch {
   id: number;
   created_at: string;
@@ -405,6 +405,7 @@ export interface ImportBatch {
   counts_json: string;
   issues_json: string;
   message: string;
+  operator: string;
 }
 
 export interface ImportBatchEntity {
@@ -415,11 +416,29 @@ export interface ImportBatchEntity {
   action: string;
   stable_key: string;
   previous_json: string | null;
+  operator: string;
 }
 
 export interface ImportBatchDetail {
   batch: ImportBatch;
   entities: ImportBatchEntity[];
+}
+
+export interface ImportCommitReport {
+  committed: boolean;
+  validation: ImportValidationReport;
+  counts: ImportCommitCounts;
+  patient_ids: number[];
+  message: string;
+  batch: ImportBatch | null;
+}
+
+export interface ImportPreviewReport {
+  validation: ImportValidationReport;
+  counts: ImportCommitCounts;
+  qc_score: number;
+  qc_issues: ImportValidationIssue[];
+  message: string;
 }
 
 function buildDownloadUrl(path: string, patientId?: number | null) {
@@ -459,8 +478,8 @@ export async function previewDatasetImport(formData: FormData) {
   return data;
 }
 
-export async function commitDatasetImport(formData: FormData) {
-  const { data } = await api.post<ImportCommitReport>('/imports/commit', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+export async function commitDatasetImport(formData: FormData, operator?: string) {
+  const { data } = await api.post<ImportCommitReport>(`/imports/commit${operatorParam(operator)}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
   return data;
 }
 
@@ -474,8 +493,8 @@ export async function fetchImportBatchDetail(batchId: number) {
   return data;
 }
 
-export async function rollbackImportBatch(batchId: number) {
-  const { data } = await api.post<ImportBatch>(`/imports/batches/${batchId}/rollback`);
+export async function rollbackImportBatch(batchId: number, operator?: string) {
+  const { data } = await api.post<ImportBatch>(`/imports/batches/${batchId}/rollback${operatorParam(operator)}`);
   return data;
 }
 

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from .imports import DATASET_SPEC
 from ..database import get_db
-from ..models import AnalysisResult, Nodule, NoduleMeasurement, Patient, Report, Study
+from ..models import AnalysisResult, Nodule, NoduleMeasurement, Patient, Report, ReportAuditLog, ReportVersion, Study
 from ..pipeline.model import model_runtime_status
 
 router = APIRouter(prefix="/exports", tags=["exports"])
@@ -482,6 +482,42 @@ def _build_report_rows(db: Session, patient_id: int | None = None) -> list[dict[
     ]
 
 
+def _build_report_version_rows(db: Session, patient_id: int | None = None) -> list[dict[str, Any]]:
+    query = db.query(ReportVersion).join(Report, ReportVersion.report_id == Report.id).order_by(ReportVersion.report_id, ReportVersion.version_number)
+    if patient_id is not None:
+        query = query.filter(Report.patient_id == patient_id)
+    return [
+        {
+            "version_id": version.id,
+            "report_id": version.report_id,
+            "version_number": version.version_number,
+            "created_at": version.created_at,
+            "status": version.status,
+            "operator": version.operator,
+            "doctor_opinion": version.doctor_opinion,
+            "followup_plan": version.followup_plan,
+        }
+        for version in query.all()
+    ]
+
+
+def _build_report_audit_rows(db: Session, patient_id: int | None = None) -> list[dict[str, Any]]:
+    query = db.query(ReportAuditLog).join(Report, ReportAuditLog.report_id == Report.id).order_by(ReportAuditLog.report_id, ReportAuditLog.created_at)
+    if patient_id is not None:
+        query = query.filter(Report.patient_id == patient_id)
+    return [
+        {
+            "audit_id": log.id,
+            "report_id": log.report_id,
+            "created_at": log.created_at,
+            "event": log.event,
+            "operator": log.operator,
+            "message": log.message,
+        }
+        for log in query.all()
+    ]
+
+
 def _latest_report(db: Session, patient_id: int | None = None) -> Report | None:
     query = db.query(Report)
     if patient_id is not None:
@@ -543,7 +579,7 @@ def _trace_field_names() -> list[str]:
     ]
 
 
-def _package_metadata(db: Session, patient_id: int | None, cohort_rows: list[dict[str, Any]], measurement_rows: list[dict[str, Any]], research_rows: list[dict[str, Any]], report_rows: list[dict[str, Any]], model_status: dict[str, Any]) -> dict[str, Any]:
+def _package_metadata(db: Session, patient_id: int | None, cohort_rows: list[dict[str, Any]], measurement_rows: list[dict[str, Any]], research_rows: list[dict[str, Any]], report_rows: list[dict[str, Any]], report_version_rows: list[dict[str, Any]], report_audit_rows: list[dict[str, Any]], model_status: dict[str, Any]) -> dict[str, Any]:
     counts = _export_counts(db, patient_id)
     return {
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -558,6 +594,8 @@ def _package_metadata(db: Session, patient_id: int | None, cohort_rows: list[dic
             "measurements": len(measurement_rows),
             "research_table": len(research_rows),
             "reports": len(report_rows),
+            "report_versions": len(report_version_rows),
+            "report_audit": len(report_audit_rows),
         },
         "files": [
             "cohort-table.csv",
@@ -566,6 +604,8 @@ def _package_metadata(db: Session, patient_id: int | None, cohort_rows: list[dic
             "imports-spec.json",
             "model-status.json",
             "reports.json",
+            "report-versions.json",
+            "report-audit.json",
             "latest-report.md",
             "metadata.json",
         ],
@@ -578,9 +618,11 @@ def export_research_package(patient_id: int | None = Query(default=None), db: Se
     measurement_rows = _build_measurement_rows(db, patient_id)
     research_rows = _build_research_rows(db, patient_id)
     report_rows = _build_report_rows(db, patient_id)
+    report_version_rows = _build_report_version_rows(db, patient_id)
+    report_audit_rows = _build_report_audit_rows(db, patient_id)
     latest_report = _latest_report(db, patient_id)
     model_status = model_runtime_status()
-    metadata = _package_metadata(db, patient_id, cohort_rows, measurement_rows, research_rows, report_rows, model_status)
+    metadata = _package_metadata(db, patient_id, cohort_rows, measurement_rows, research_rows, report_rows, report_version_rows, report_audit_rows, model_status)
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -590,6 +632,8 @@ def export_research_package(patient_id: int | None = Query(default=None), db: Se
         archive.writestr("imports-spec.json", json.dumps(DATASET_SPEC, ensure_ascii=False, indent=2, default=str))
         archive.writestr("model-status.json", json.dumps(model_status, ensure_ascii=False, indent=2, default=str))
         archive.writestr("reports.json", json.dumps(report_rows, ensure_ascii=False, indent=2, default=str))
+        archive.writestr("report-versions.json", json.dumps(report_version_rows, ensure_ascii=False, indent=2, default=str))
+        archive.writestr("report-audit.json", json.dumps(report_audit_rows, ensure_ascii=False, indent=2, default=str))
         if latest_report:
             archive.writestr("latest-report.md", _report_export_text(latest_report))
         archive.writestr("metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2, default=str))

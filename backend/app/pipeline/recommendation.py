@@ -31,7 +31,9 @@ def structured_followup_recommendation(risk: dict[str, Any], features: dict[str,
         "ai_risk_summary": f"AI 评估提示{level}进展倾向。",
         "guideline_reference": guideline,
         "clinical_rationale": "；".join(rationale_parts) + "。",
+        "rule_based_plan": plan,
         "followup_plan": plan,
+        "doctor_confirmation_required": "AI 风险评分和指南参考需由医生结合完整病史、原始影像、既往报告和患者意愿确认。",
     }
 
 

@@ -1,7 +1,7 @@
 import { ArrowLeft, CheckCircle, FileSpreadsheet, UploadCloud, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Page } from '../App';
-import { api, commitDatasetImport, fetchImportBatchDetail, fetchImportBatches, fetchPatients, previewDatasetImport, rollbackImportBatch, validateDatasetImport, type ImportBatch, type ImportBatchDetail, type ImportCommitReport, type ImportPreviewReport, type ImportValidationReport, type PatientSummary } from '../lib/api';
+import { api, commitDatasetImport, errorMessage, fetchImportBatchDetail, fetchImportBatches, fetchPatients, previewDatasetImport, rollbackImportBatch, validateDatasetImport, type ImportBatch, type ImportBatchDetail, type ImportCommitReport, type ImportPreviewReport, type ImportValidationReport, type PatientSummary } from '../lib/api';
 
 interface Props {
   patientId?: number;
@@ -57,7 +57,7 @@ function ImportBatchHistory({ batches, selectedBatch, onSelect, onRollback }: { 
           <tbody>
             {batches.map((batch) => (
               <tr key={batch.id}>
-                <td><strong>#{batch.id}</strong></td>
+                <td><strong>#{batch.id}</strong><span>{batch.operator}</span></td>
                 <td><span className={`model-status-chip ${batch.status === 'committed' ? 'real' : batch.status === 'rolled_back' ? 'fallback' : 'proxy'}`}>{batch.status}</span></td>
                 <td>{batch.qc_score.toFixed(1)}</td>
                 <td>{countText(batch)}</td>
@@ -80,7 +80,7 @@ function ImportBatchHistory({ batches, selectedBatch, onSelect, onRollback }: { 
             <thead><tr><th>类型</th><th>动作</th><th>实体 ID</th><th>稳定键</th></tr></thead>
             <tbody>
               {selectedBatch.entities.map((entity) => (
-                <tr key={entity.id}><td>{entity.entity_type}</td><td>{entity.action}</td><td>{entity.entity_id}</td><td><span>{entity.stable_key}</span></td></tr>
+                <tr key={entity.id}><td>{entity.entity_type}</td><td>{entity.action}</td><td>{entity.entity_id}</td><td><span>{entity.stable_key}</span><span>{entity.operator}</span></td></tr>
               ))}
             </tbody>
           </table>
@@ -159,6 +159,9 @@ function ValidationReport({ report }: { report: ImportValidationReport }) {
 export default function UploadStudy({ patientId, setPage }: Props) {
   const [patients, setPatients] = useState<PatientSummary[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState(patientId ?? 1);
+  const [operator, setOperator] = useState('系统');
+  const [anonymizeDicom, setAnonymizeDicom] = useState(true);
+  const [rejectUnanonymized, setRejectUnanonymized] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -207,14 +210,16 @@ export default function UploadStudy({ patientId, setPage }: Props) {
     const formData = new FormData();
     formData.append('patient_id', String(selectedPatientId));
     formData.append('file', file);
+    formData.append('anonymize_dicom', String(anonymizeDicom));
+    formData.append('reject_unanonymized', String(rejectUnanonymized));
     setUploading(true);
     try {
       const { data } = await api.post('/uploads', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       const anonymization = data.metadata?.anonymization;
       const suffix = anonymization?.checked ? ` 脱敏检查：${anonymization.safe ? '通过' : `发现 ${anonymization.unsafe_fields.join('、')}`}` : '';
       setMessage(`${data.message}${suffix}`);
-    } catch {
-      setMessage('上传失败，请确认后端服务已启动。');
+    } catch (error) {
+      setMessage(errorMessage(error, '上传失败，请确认后端服务已启动，且 DICOM/zip 文件可解析。'));
     } finally {
       setUploading(false);
     }
@@ -230,8 +235,8 @@ export default function UploadStudy({ patientId, setPage }: Props) {
     try {
       const report = await validateDatasetImport(formData);
       setValidationReport(report);
-    } catch {
-      setValidationMessage('校验失败，请确认后端服务已启动，且 CSV 文件为 UTF-8 编码。');
+    } catch (error) {
+      setValidationMessage(errorMessage(error, '校验失败，请确认后端服务已启动，且 CSV 文件为 UTF-8 编码。'));
     } finally {
       setValidating(false);
     }
@@ -248,8 +253,8 @@ export default function UploadStudy({ patientId, setPage }: Props) {
       setPreviewReport(report);
       setValidationReport(report.validation);
       setValidationMessage(report.message);
-    } catch {
-      setValidationMessage('预览失败，请确认后端服务已启动，且 CSV 文件仍可读取。');
+    } catch (error) {
+      setValidationMessage(errorMessage(error, '预览失败，请确认后端服务已启动，且 CSV 文件仍可读取。'));
     } finally {
       setValidating(false);
     }
@@ -261,7 +266,7 @@ export default function UploadStudy({ patientId, setPage }: Props) {
     setValidating(true);
     setValidationMessage('');
     try {
-      const report = await commitDatasetImport(formData);
+      const report = await commitDatasetImport(formData, operator);
       setCommitReport(report);
       setValidationReport(report.validation);
       if (report.committed) {
@@ -269,8 +274,8 @@ export default function UploadStudy({ patientId, setPage }: Props) {
         fetchPatients().then(setPatients);
         refreshBatches();
       }
-    } catch {
-      setValidationMessage('导入失败，请确认后端服务已启动，且 CSV 文件仍可读取。');
+    } catch (error) {
+      setValidationMessage(errorMessage(error, '导入失败，请确认后端服务已启动，且 CSV 文件仍可读取。'));
     } finally {
       setValidating(false);
     }
@@ -281,7 +286,7 @@ export default function UploadStudy({ patientId, setPage }: Props) {
   }
 
   async function handleRollbackBatch(batchId: number) {
-    await rollbackImportBatch(batchId);
+    await rollbackImportBatch(batchId, operator);
     setValidationMessage(`已回滚导入批次 #${batchId}。`);
     setSelectedBatch(null);
     await refreshBatches();
@@ -308,6 +313,18 @@ export default function UploadStudy({ patientId, setPage }: Props) {
               <option key={patient.id} value={patient.id}>{patient.patient_code} · {patient.name}</option>
             ))}
           </select>
+        </label>
+        <label>
+          操作者
+          <input value={operator} onChange={(event) => setOperator(event.target.value || '系统')} placeholder="医生/数据管理员姓名" />
+        </label>
+        <label className="inline-check">
+          <input type="checkbox" checked={anonymizeDicom} onChange={(event) => setAnonymizeDicom(event.target.checked)} />
+          保存 DICOM 脱敏副本
+        </label>
+        <label className="inline-check">
+          <input type="checkbox" checked={rejectUnanonymized} onChange={(event) => setRejectUnanonymized(event.target.checked)} />
+          发现未脱敏字段时拒绝上传
         </label>
         <label className="dropzone">
           <UploadCloud size={38} />

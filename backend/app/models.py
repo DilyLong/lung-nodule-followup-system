@@ -148,6 +148,7 @@ class ImportBatch(Base):
     counts_json: Mapped[str] = mapped_column(Text, default="{}")
     issues_json: Mapped[str] = mapped_column(Text, default="[]")
     message: Mapped[str] = mapped_column(Text, default="")
+    operator: Mapped[str] = mapped_column(String(64), default="系统")
 
 
 class ImportBatchEntity(Base):
@@ -160,6 +161,7 @@ class ImportBatchEntity(Base):
     action: Mapped[str] = mapped_column(String(32))
     stable_key: Mapped[str] = mapped_column(String(256))
     previous_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    operator: Mapped[str] = mapped_column(String(64), default="系统")
 
 
 class ReportVersion(Base):
@@ -173,6 +175,7 @@ class ReportVersion(Base):
     content_markdown: Mapped[str] = mapped_column(Text)
     doctor_opinion: Mapped[str] = mapped_column(Text, default="")
     followup_plan: Mapped[str] = mapped_column(Text, default="")
+    operator: Mapped[str] = mapped_column(String(64), default="系统")
 
 
 class ReportAuditLog(Base):
@@ -183,6 +186,7 @@ class ReportAuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     event: Mapped[str] = mapped_column(String(64))
     message: Mapped[str] = mapped_column(Text)
+    operator: Mapped[str] = mapped_column(String(64), default="系统")
 
 
 class Report(Base):

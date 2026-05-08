@@ -243,8 +243,9 @@ td svg { vertical-align: middle; }
 .severity-badge { display: inline-flex; border-radius: 999px; padding: 5px 8px; font-size: 12px; font-weight: 800; background: #e2e8f0; color: #475569; }
 .severity-badge.error { background: #fee2e2; color: #b91c1c; }
 .severity-badge.warning { background: #fef3c7; color: #92400e; }
-
-
+.inline-check { display: inline-flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 8px !important; font-weight: 700; color: #334155; }
+.inline-check input { width: auto; }
+.small-action.danger:disabled { opacity: 0.45; cursor: not-allowed; }
 
 @media print {
   :root { background: white; color: #111827; }

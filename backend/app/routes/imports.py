@@ -249,9 +249,9 @@ def _snapshot(obj: Any, fields: list[str]) -> str:
     return json.dumps({field: getattr(obj, field) for field in fields}, ensure_ascii=False, default=str)
 
 
-def _track(db: Session, batch: ImportBatch | None, entity_type: str, entity_id: int, action: str, stable_key: str, previous: str | None) -> None:
+def _track(db: Session, batch: ImportBatch | None, entity_type: str, entity_id: int, action: str, stable_key: str, previous: str | None, operator: str = "系统") -> None:
     if batch:
-        db.add(ImportBatchEntity(batch_id=batch.id, entity_type=entity_type, entity_id=entity_id, action=action, stable_key=stable_key, previous_json=previous))
+        db.add(ImportBatchEntity(batch_id=batch.id, entity_type=entity_type, entity_id=entity_id, action=action, stable_key=stable_key, previous_json=previous, operator=operator))
 
 
 def _qc_issues(data: dict[str, list[dict[str, str]]]) -> list[ImportValidationIssue]:
@@ -310,7 +310,7 @@ def _preview_counts(data: dict[str, list[dict[str, str]]], db: Session) -> Impor
     return counts
 
 
-def _upsert_import_data(data: dict[str, list[dict[str, str]]], db: Session, batch: ImportBatch | None = None) -> tuple[ImportCommitCounts, list[int]]:
+def _upsert_import_data(data: dict[str, list[dict[str, str]]], db: Session, batch: ImportBatch | None = None, operator: str = "系统") -> tuple[ImportCommitCounts, list[int]]:
     counts = ImportCommitCounts()
     patients_by_code: dict[str, Patient] = {}
     studies_by_key: dict[tuple[str, str], Study] = {}
@@ -344,7 +344,7 @@ def _upsert_import_data(data: dict[str, list[dict[str, str]]], db: Session, batc
         patient.family_history = _value(row, "family_history", "无")
         patient.primary_diagnosis = _value(row, "primary_diagnosis", "肺结节随访")
         patients_by_code[code] = patient
-        _track(db, batch, "patient", patient.id, action, code, previous)
+        _track(db, batch, "patient", patient.id, action, code, previous, operator)
     db.flush()
     for row in data["studies.csv"]:
         patient = patients_by_code[row["patient_code"]]
@@ -368,7 +368,7 @@ def _upsert_import_data(data: dict[str, list[dict[str, str]]], db: Session, batc
         study.file_name = _value(row, "dicom_relative_path", None) or None
         study.status = "CSV 已导入，待 DICOM 关联"
         studies_by_key[(row["patient_code"], row["study_date"])] = study
-        _track(db, batch, "study", study.id, action, f"{row['patient_code']}|{row['study_date']}", previous)
+        _track(db, batch, "study", study.id, action, f"{row['patient_code']}|{row['study_date']}", previous, operator)
     db.flush()
     for row in data["nodules.csv"]:
         patient = patients_by_code[row["patient_code"]]
@@ -390,7 +390,7 @@ def _upsert_import_data(data: dict[str, list[dict[str, str]]], db: Session, batc
         nodule.nodule_type = row["nodule_type"]
         nodule.baseline_impression = _value(row, "baseline_impression", "CSV 导入结节")
         nodules_by_key[(row["patient_code"], row["nodule_id"])] = nodule
-        _track(db, batch, "nodule", nodule.id, action, f"{row['patient_code']}|{row['nodule_id']}", previous)
+        _track(db, batch, "nodule", nodule.id, action, f"{row['patient_code']}|{row['nodule_id']}", previous, operator)
     db.flush()
     for row in data["measurements.csv"]:
         nodule = nodules_by_key[(row["patient_code"], row["nodule_id"])]
@@ -430,7 +430,7 @@ def _upsert_import_data(data: dict[str, list[dict[str, str]]], db: Session, batc
         measurement.lobulation_score = _float_value(row, "lobulation_score", 0.0) or 0.0
         measurement.pleural_retraction_score = _float_value(row, "pleural_retraction_score", 0.0) or 0.0
         measurement.measurement_source = _value(row, "measurement_source", "imported_research_table")
-        _track(db, batch, "measurement", measurement.id, action, f"{row['patient_code']}|{row['study_date']}|{row['nodule_id']}", previous)
+        _track(db, batch, "measurement", measurement.id, action, f"{row['patient_code']}|{row['study_date']}|{row['nodule_id']}", previous, operator)
     db.flush()
     return counts, [patient.id for patient in patients_by_code.values()]
 
@@ -475,21 +475,21 @@ def preview_import_dataset(patients: UploadFile = File(...), studies: UploadFile
 
 
 @router.post("/commit", response_model=ImportCommitReport)
-def commit_import_dataset(patients: UploadFile = File(...), studies: UploadFile = File(...), nodules: UploadFile = File(...), measurements: UploadFile = File(...), db: Session = Depends(get_db)) -> ImportCommitReport:
+def commit_import_dataset(patients: UploadFile = File(...), studies: UploadFile = File(...), nodules: UploadFile = File(...), measurements: UploadFile = File(...), operator: str = "系统", db: Session = Depends(get_db)) -> ImportCommitReport:
     report, data = _validate_uploaded_files(_uploaded_file_map(patients, studies, nodules, measurements))
     empty_counts = ImportCommitCounts()
     qc = _qc_issues(data) if report.valid else []
-    batch = ImportBatch(status="failed" if not report.valid else "committed", qc_score=_qc_score(qc), issues_json=json.dumps([issue.model_dump() for issue in qc], ensure_ascii=False), message="CSV 存在错误，未写入数据库。" if not report.valid else "CSV 队列已导入数据库，可在病例工作台查看。")
+    batch = ImportBatch(status="failed" if not report.valid else "committed", qc_score=_qc_score(qc), issues_json=json.dumps([issue.model_dump() for issue in qc], ensure_ascii=False), message="CSV 存在错误，未写入数据库。" if not report.valid else "CSV 队列已导入数据库，可在病例工作台查看。", operator=operator)
     db.add(batch)
     db.flush()
     if not report.valid:
         db.commit()
-        return ImportCommitReport(committed=False, validation=report, counts=empty_counts, patient_ids=[], message=batch.message)
-    counts, patient_ids = _upsert_import_data(data, db, batch)
+        return ImportCommitReport(committed=False, validation=report, counts=empty_counts, patient_ids=[], message=batch.message, batch=batch)
+    counts, patient_ids = _upsert_import_data(data, db, batch, operator)
     batch.counts_json = counts.model_dump_json()
     batch.committed_at = datetime.utcnow()
     db.commit()
-    return ImportCommitReport(committed=True, validation=report, counts=counts, patient_ids=patient_ids, message=batch.message)
+    return ImportCommitReport(committed=True, validation=report, counts=counts, patient_ids=patient_ids, message=batch.message, batch=batch)
 
 
 @router.get("/batches", response_model=list[ImportBatchRead])
@@ -507,7 +507,7 @@ def get_import_batch(batch_id: int, db: Session = Depends(get_db)) -> ImportBatc
 
 
 @router.post("/batches/{batch_id}/rollback", response_model=ImportBatchRead)
-def rollback_import_batch(batch_id: int, db: Session = Depends(get_db)) -> ImportBatch:
+def rollback_import_batch(batch_id: int, operator: str = "系统", db: Session = Depends(get_db)) -> ImportBatch:
     batch = db.get(ImportBatch, batch_id)
     if not batch:
         raise HTTPException(status_code=404, detail="Import batch not found")
@@ -517,6 +517,7 @@ def rollback_import_batch(batch_id: int, db: Session = Depends(get_db)) -> Impor
     for entity in entities:
         _rollback_entity(entity, db)
     batch.status = "rolled_back"
+    batch.operator = operator
     batch.rolled_back_at = datetime.utcnow()
     db.commit()
     db.refresh(batch)

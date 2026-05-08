@@ -61,6 +61,13 @@ def _target_nodule(patient: Patient, analysis: AnalysisResult) -> Nodule | None:
     return patient.nodules[0] if patient.nodules else None
 
 
+def _structured_recommendation(analysis: AnalysisResult) -> dict[str, str]:
+    try:
+        payload = json.loads(analysis.features_json)
+    except json.JSONDecodeError:
+        payload = {}
+    recommendation = payload.get("recommendation")
+    return recommendation if isinstance(recommendation, dict) else {}
 def build_report_markdown(patient: Patient, analysis: AnalysisResult) -> str:
     nodule = _target_nodule(patient, analysis)
     studies = sorted(patient.studies, key=lambda item: item.study_date)
@@ -77,7 +84,16 @@ def build_report_markdown(patient: Patient, analysis: AnalysisResult) -> str:
                     f"{measurement.solid_component_percent:.0f}% |"
                 )
 
+    structured = _structured_recommendation(analysis)
+    report_number = f"LNF-{patient.patient_code}-{analysis.id:04d}"
     return f"""# 肺结节多期 CT 智能随访报告
+
+## 报告抬头
+
+- 医疗机构：华中科技大学同济医学院附属协和医院（演示模板）
+- 科室：胸外科 / 影像科联合随访门诊
+- 报告编号：{report_number}
+- 报告版本：草稿 v1
 
 ## 患者信息
 
@@ -110,9 +126,17 @@ def build_report_markdown(patient: Patient, analysis: AnalysisResult) -> str:
 - AI 风险分层：{analysis.risk_level}
 
 {_model_explanation_markdown(analysis)}
-## 个体化随访建议
+## AI 风险评分、指南参考与医生确认
 
-{analysis.recommendation}
+| 类别 | 内容 |
+|---|---|
+| AI 风险评分 | {structured.get('ai_risk_summary', analysis.recommendation)} |
+| 风险依据 | {structured.get('clinical_rationale', '未记录')} |
+| 指南/规则参考 | {structured.get('guideline_reference', '未记录')} |
+| 规则建议 | {structured.get('rule_based_plan', structured.get('followup_plan', analysis.recommendation))} |
+| 医生最终意见 | 待医生在确认区填写 |
+
+{structured.get('doctor_confirmation_required', 'AI 输出仅作为辅助决策参考，最终诊疗意见需由医生确认。')}
 
 本报告由本地演示版系统自动生成，仅作为临床辅助决策参考，最终诊疗意见需由医生结合完整病史、影像和指南确认。
 """
@@ -125,6 +149,8 @@ def _final_markdown(report: Report) -> str:
 
 - 医生意见：{report.doctor_opinion or '未填写'}
 - 确认随访建议：{report.followup_plan or '未填写'}
+- 医生签名：________________
+- 确认时间：{report.finalized_at or '未确认'}
 """
 
 
@@ -209,7 +235,7 @@ def _next_version_number(report_id: int, db: Session) -> int:
     return (latest.version_number if latest else 0) + 1
 
 
-def _add_report_version(report: Report, db: Session, event: str, message: str) -> None:
+def _add_report_version(report: Report, db: Session, event: str, message: str, operator: str = "系统") -> None:
     db.add(
         ReportVersion(
             report_id=report.id,
@@ -218,13 +244,14 @@ def _add_report_version(report: Report, db: Session, event: str, message: str) -
             content_markdown=report.content_markdown,
             doctor_opinion=report.doctor_opinion,
             followup_plan=report.followup_plan,
+            operator=operator,
         )
     )
-    db.add(ReportAuditLog(report_id=report.id, event=event, message=message))
+    db.add(ReportAuditLog(report_id=report.id, event=event, message=message, operator=operator))
 
 
 @router.post("/{analysis_id}", response_model=ReportRead)
-def create_report(analysis_id: int, db: Session = Depends(get_db)) -> Report:
+def create_report(analysis_id: int, operator: str = "系统", db: Session = Depends(get_db)) -> Report:
     analysis = db.get(AnalysisResult, analysis_id)
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
@@ -252,14 +279,14 @@ def create_report(analysis_id: int, db: Session = Depends(get_db)) -> Report:
     )
     db.add(report)
     db.flush()
-    _add_report_version(report, db, "created", "创建报告草稿 v1")
+    _add_report_version(report, db, "created", "创建报告草稿 v1", operator)
     db.commit()
     db.refresh(report)
     return report
 
 
 @router.put("/{report_id}", response_model=ReportRead)
-def update_report(report_id: int, payload: ReportUpdate, db: Session = Depends(get_db)) -> Report:
+def update_report(report_id: int, payload: ReportUpdate, operator: str = "系统", db: Session = Depends(get_db)) -> Report:
     report = db.get(Report, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -279,7 +306,7 @@ def update_report(report_id: int, payload: ReportUpdate, db: Session = Depends(g
     report.followup_plan = payload.followup_plan
     report.status = payload.status
     report.finalized_at = datetime.utcnow() if payload.status == "final" else None
-    _add_report_version(report, db, "finalized" if payload.status == "final" else "draft_saved", "确认最终版报告" if payload.status == "final" else "保存报告草稿")
+    _add_report_version(report, db, "finalized" if payload.status == "final" else "draft_saved", "确认最终版报告" if payload.status == "final" else "保存报告草稿", operator)
     db.commit()
     db.refresh(report)
     return report
@@ -307,7 +334,7 @@ def export_report_print_html(report_id: int, db: Session = Depends(get_db)) -> H
 
 
 @router.post("/{report_id}/revisions", response_model=ReportRead)
-def create_report_revision(report_id: int, db: Session = Depends(get_db)) -> Report:
+def create_report_revision(report_id: int, operator: str = "系统", db: Session = Depends(get_db)) -> Report:
     report = db.get(Report, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -322,7 +349,7 @@ def create_report_revision(report_id: int, db: Session = Depends(get_db)) -> Rep
     )
     db.add(revision)
     db.flush()
-    _add_report_version(revision, db, "revision_created", f"基于报告 {report.id} 创建修订草稿")
+    _add_report_version(revision, db, "revision_created", f"基于报告 {report.id} 创建修订草稿", operator)
     db.commit()
     db.refresh(revision)
     return revision

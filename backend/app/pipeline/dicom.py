@@ -109,9 +109,23 @@ def _series_summary(datasets: list[tuple[Path, Any]]) -> list[dict[str, Any]]:
     return sorted(summaries, key=lambda item: (item["modality"] != "CT", -item["slice_count"]))
 
 
+SENSITIVE_DICOM_FIELDS = ["PatientName", "PatientID", "AccessionNumber", "PatientBirthDate", "InstitutionName"]
+
+
 def _anonymization_issues(dataset: Any) -> list[str]:
-    fields = ["PatientName", "PatientID", "AccessionNumber", "PatientBirthDate", "InstitutionName"]
-    return [field for field in fields if str(getattr(dataset, field, "")).strip()]
+    return [field for field in SENSITIVE_DICOM_FIELDS if str(getattr(dataset, field, "")).strip()]
+
+
+def _write_dicom_copy(dataset: Any, source: Path, target: Path, anonymize: bool) -> None:
+    if not anonymize:
+        shutil.copyfile(source, target)
+        return
+    dataset = dataset.copy()
+    for field in SENSITIVE_DICOM_FIELDS:
+        if hasattr(dataset, field):
+            setattr(dataset, field, "ANONYMIZED")
+    dataset.remove_private_tags()
+    dataset.save_as(target, write_like_original=False)
 
 def _read_dicom_datasets(input_path: Path) -> list[tuple[Path, Any]]:
     with TemporaryDirectory() as temp_name:
@@ -139,7 +153,7 @@ def inspect_dicom_series(input_path: Path) -> dict[str, Any]:
     }
 
 
-def render_dicom_series(input_path: Path, output_dir: Path, series_uid: str | None = None) -> DicomSeriesResult:
+def render_dicom_series(input_path: Path, output_dir: Path, series_uid: str | None = None, anonymize: bool = True) -> DicomSeriesResult:
     output_dir.mkdir(parents=True, exist_ok=True)
     raw_dir = output_dir / "dicom"
     png_dir = output_dir / "png"
@@ -168,7 +182,7 @@ def render_dicom_series(input_path: Path, output_dir: Path, series_uid: str | No
         rendered: list[RenderedSlice] = []
         for index, (source, dataset) in enumerate(datasets, start=1):
             raw_target = raw_dir / f"slice-{index:04d}.dcm"
-            shutil.copyfile(source, raw_target)
+            _write_dicom_copy(dataset, source, raw_target, anonymize)
             image_target = png_dir / f"slice-{index:04d}.png"
             image = Image.fromarray(_windowed_uint8(dataset), mode="L")
             image.save(image_target)
@@ -192,7 +206,7 @@ def render_dicom_series(input_path: Path, output_dir: Path, series_uid: str | No
         "series_description": str(getattr(first_dataset, "SeriesDescription", "DICOM CT Series"))[:128],
         "series_instance_uid": _series_uid(first_dataset),
         "available_series": _series_summary(datasets),
-        "anonymization": {"checked": True, "safe": len(_anonymization_issues(first_dataset)) == 0, "unsafe_fields": _anonymization_issues(first_dataset)},
+        "anonymization": {"checked": True, "safe": len(_anonymization_issues(first_dataset)) == 0, "unsafe_fields": _anonymization_issues(first_dataset), "anonymized_copy_saved": anonymize},
         "slice_count": len(rendered),
         "rows": rendered[0].rows,
         "columns": rendered[0].columns,

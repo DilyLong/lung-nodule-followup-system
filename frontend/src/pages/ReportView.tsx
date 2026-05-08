@@ -112,6 +112,7 @@ export default function ReportView({ patientId, setPage }: Props) {
   const [doctorOpinion, setDoctorOpinion] = useState('');
   const [followupPlan, setFollowupPlan] = useState('');
   const [versions, setVersions] = useState<ReportVersion[]>([]);
+  const [operator, setOperator] = useState('系统');
   const [auditLogs, setAuditLogs] = useState<ReportAuditLog[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -149,7 +150,7 @@ export default function ReportView({ patientId, setPage }: Props) {
         doctor_opinion: doctorOpinion,
         followup_plan: followupPlan,
         status,
-      });
+      }, operator);
       setReport(updated);
       setContentMarkdown(updated.content_markdown);
       setDoctorOpinion(updated.doctor_opinion);
@@ -166,7 +167,7 @@ export default function ReportView({ patientId, setPage }: Props) {
     setSaving(true);
     setMessage('');
     try {
-      const revision = await createReportRevision(report.id);
+      const revision = await createReportRevision(report.id, operator);
       setReport(revision);
       setContentMarkdown(revision.content_markdown);
       setDoctorOpinion(revision.doctor_opinion);
@@ -223,6 +224,10 @@ export default function ReportView({ patientId, setPage }: Props) {
           </div>
           {message && <p className="success-banner compact">{message}</p>}
           <label>
+            操作者
+            <input value={operator} onChange={(event) => setOperator(event.target.value || '系统')} placeholder="医生/审核人姓名" />
+          </label>
+          <label>
             报告正文 Markdown
             <textarea value={contentMarkdown} onChange={(event) => setContentMarkdown(event.target.value)} rows={16} disabled={report.status === 'final'} />
           </label>
@@ -239,23 +244,23 @@ export default function ReportView({ patientId, setPage }: Props) {
           <div className="report-editor-grid">
             <div className="table-card validation-table">
               <table>
-                <thead><tr><th>版本</th><th>状态</th><th>时间</th></tr></thead>
+                <thead><tr><th>版本</th><th>状态</th><th>操作者</th><th>时间</th></tr></thead>
                 <tbody>
                   {versions.map((version) => (
-                    <tr key={version.id}><td>v{version.version_number}</td><td>{version.status}</td><td><span>{new Date(version.created_at).toLocaleString()}</span></td></tr>
+                    <tr key={version.id}><td>v{version.version_number}</td><td>{version.status}</td><td>{version.operator}</td><td><span>{new Date(version.created_at).toLocaleString()}</span></td></tr>
                   ))}
-                  {versions.length === 0 && <tr><td colSpan={3}><span>暂无版本记录。</span></td></tr>}
+                  {versions.length === 0 && <tr><td colSpan={4}><span>暂无版本记录。</span></td></tr>}
                 </tbody>
               </table>
             </div>
             <div className="table-card validation-table">
               <table>
-                <thead><tr><th>事件</th><th>说明</th><th>时间</th></tr></thead>
+                <thead><tr><th>事件</th><th>操作者</th><th>说明</th><th>时间</th></tr></thead>
                 <tbody>
                   {auditLogs.map((log) => (
-                    <tr key={log.id}><td>{log.event}</td><td><span>{log.message}</span></td><td><span>{new Date(log.created_at).toLocaleString()}</span></td></tr>
+                    <tr key={log.id}><td>{log.event}</td><td>{log.operator}</td><td><span>{log.message}</span></td><td><span>{new Date(log.created_at).toLocaleString()}</span></td></tr>
                   ))}
-                  {auditLogs.length === 0 && <tr><td colSpan={3}><span>暂无审计记录。</span></td></tr>}
+                  {auditLogs.length === 0 && <tr><td colSpan={4}><span>暂无审计记录。</span></td></tr>}
                 </tbody>
               </table>
             </div>
