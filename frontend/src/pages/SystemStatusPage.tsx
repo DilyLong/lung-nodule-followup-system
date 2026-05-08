@@ -57,6 +57,14 @@ export default function SystemStatusPage({ setPage }: Props) {
     ['导入批次', status.database.import_batch_count],
   ];
 
+  const measurementSources = status.database.measurement_sources ?? {};
+  const dataQuality = status.data_quality;
+  const trainingReadiness = dataQuality?.training_readiness;
+  const followupInterval = dataQuality?.followup_interval_days;
+  const labelDistribution = dataQuality?.label_distribution ?? {};
+  const missingFields = dataQuality?.missing_fields ?? {};
+  const actions = status.actions ?? [];
+
   return (
     <div className="page">
       <header className="page-header">
@@ -138,7 +146,7 @@ export default function SystemStatusPage({ setPage }: Props) {
         <div className="panel spec-section">
           <h2><Clock size={19} /> 测量来源</h2>
           <div className="status-grid">
-            {Object.entries(status.database.measurement_sources).map(([source, count]) => (
+            {Object.entries(measurementSources).map(([source, count]) => (
               <div className="status-card" key={source}><span>{source}</span><strong>{count}</strong></div>
             ))}
           </div>
@@ -160,16 +168,16 @@ export default function SystemStatusPage({ setPage }: Props) {
         <div className="panel spec-section">
           <h2><CheckCircle size={19} /> 数据质量看板</h2>
           <div className="status-grid">
-            <div className="status-card"><span>可训练样本</span><strong>{status.data_quality.training_readiness.eligible_sample_count}</strong></div>
-            <div className="status-card"><span>阳性 / 阴性</span><strong>{status.data_quality.training_readiness.positive_count} / {status.data_quality.training_readiness.negative_count}</strong></div>
-            <div className="status-card"><span>排除样本</span><strong>{status.data_quality.training_readiness.excluded_count}</strong></div>
-            <div className="status-card"><span>随访间隔中位数</span><strong>{status.data_quality.followup_interval_days.median ?? '—'} 天</strong></div>
+            <div className="status-card"><span>可训练样本</span><strong>{trainingReadiness?.eligible_sample_count ?? '—'}</strong></div>
+            <div className="status-card"><span>阳性 / 阴性</span><strong>{trainingReadiness ? `${trainingReadiness.positive_count} / ${trainingReadiness.negative_count}` : '—'}</strong></div>
+            <div className="status-card"><span>排除样本</span><strong>{trainingReadiness?.excluded_count ?? '—'}</strong></div>
+            <div className="status-card"><span>随访间隔中位数</span><strong>{followupInterval?.median ?? '—'} 天</strong></div>
           </div>
         </div>
         <div className="panel spec-section">
           <h2>标签分布</h2>
           <div className="status-grid">
-            {Object.entries(status.data_quality.label_distribution).map(([label, count]) => (
+            {Object.entries(labelDistribution).map(([label, count]) => (
               <div className="status-card" key={label}><span>{label}</span><strong>{count}</strong></div>
             ))}
           </div>
@@ -180,7 +188,7 @@ export default function SystemStatusPage({ setPage }: Props) {
         <div className="panel spec-section">
           <h2>缺失字段</h2>
           <div className="status-grid">
-            {Object.entries(status.data_quality.missing_fields).map(([field, count]) => (
+            {Object.entries(missingFields).map(([field, count]) => (
               <div className="status-card" key={field}><span>{field}</span><strong>{count}</strong></div>
             ))}
           </div>
@@ -188,10 +196,10 @@ export default function SystemStatusPage({ setPage }: Props) {
         <div className="panel spec-section">
           <h2>训练排除原因</h2>
           <div className="readiness-list">
-            {status.data_quality.training_readiness.top_exclusions.map((item, index) => (
+            {(trainingReadiness?.top_exclusions ?? []).map((item, index) => (
               <div key={index}><span className="status-dot missing" /><div><strong>结节 {String(item.nodule_id ?? '-')}</strong><span>{String(item.reason ?? 'unknown')}</span></div></div>
             ))}
-            {status.data_quality.training_readiness.top_exclusions.length === 0 && <div><span className="status-dot ok" /><div><strong>暂无排除样本</strong><span>当前训练队列字段完整。</span></div></div>}
+            {(trainingReadiness?.top_exclusions?.length ?? 0) === 0 && <div><span className="status-dot ok" /><div><strong>暂无排除样本</strong><span>当前训练队列字段完整或后端未返回训练质控字段。</span></div></div>}
           </div>
         </div>
       </section>
@@ -199,13 +207,14 @@ export default function SystemStatusPage({ setPage }: Props) {
       <section className="panel spec-section">
         <h2>下一步行动建议</h2>
         <div className="action-grid">
-          {status.actions.map((action) => (
+          {actions.map((action) => (
             <div className={`action-card ${action.severity}`} key={action.key}>
               <strong>{action.title}</strong>
               <span>{action.description}</span>
               <button className="small-action" onClick={() => setPage(targetPage(action.target_page))}>去处理</button>
             </div>
           ))}
+          {actions.length === 0 && <div className="action-card"><strong>暂无行动建议</strong><span>当前后端未返回 actions 字段，建议重启后端以加载最新接口。</span></div>}
         </div>
       </section>
 

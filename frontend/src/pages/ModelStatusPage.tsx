@@ -98,12 +98,19 @@ export default function ModelStatusPage({ setPage }: Props) {
   const [trainingError, setTrainingError] = useState('');
 
   useEffect(() => {
-    Promise.all([fetchModelRuntimeStatus(), fetchModelTrainingReadiness()])
-      .then(([runtimeStatus, readiness]) => {
-        setStatus(runtimeStatus);
-        setTrainingReadiness(readiness);
+    Promise.allSettled([fetchModelRuntimeStatus(), fetchModelTrainingReadiness()])
+      .then(([runtimeResult, readinessResult]) => {
+        if (runtimeResult.status === 'fulfilled') {
+          setStatus(runtimeResult.value);
+        } else {
+          setError('无法读取模型运行状态，请确认后端服务已启动。');
+        }
+        if (readinessResult.status === 'fulfilled') {
+          setTrainingReadiness(readinessResult.value);
+        } else {
+          setTrainingError('模型训练 readiness 接口暂不可用，请重启后端以加载最新接口。');
+        }
       })
-      .catch(() => setError('无法读取模型状态，请确认后端服务已启动。'))
       .finally(() => setLoading(false));
   }, []);
 

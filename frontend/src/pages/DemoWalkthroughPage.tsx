@@ -70,6 +70,15 @@ export default function DemoWalkthroughPage({ setPage }: Props) {
     }
   }
 
+  if (error && !walkthrough) {
+    return (
+      <div className="page">
+        <p className="empty">{error}</p>
+        <div className="info-banner">请确认当前 8000 端口运行的是最新后端代码；如果刚更新过代码，需要重启 FastAPI 服务。</div>
+      </div>
+    );
+  }
+
   if (!walkthrough) {
     return <div className="page"><p className="empty">正在加载演示脚本...</p></div>;
   }
