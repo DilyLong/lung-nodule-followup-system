@@ -21,6 +21,12 @@ function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString() : '暂无';
 }
 
+function targetPage(page: string): Page {
+  if (page === 'upload') return { name: 'upload' };
+  if (page === 'modelStatus') return { name: 'modelStatus' };
+  return { name: 'dashboard' };
+}
+
 export default function SystemStatusPage({ setPage }: Props) {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [error, setError] = useState('');
@@ -136,6 +142,19 @@ export default function SystemStatusPage({ setPage }: Props) {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="panel spec-section">
+        <h2>下一步行动建议</h2>
+        <div className="action-grid">
+          {status.actions.map((action) => (
+            <div className={`action-card ${action.severity}`} key={action.key}>
+              <strong>{action.title}</strong>
+              <span>{action.description}</span>
+              <button className="small-action" onClick={() => setPage(targetPage(action.target_page))}>去处理</button>
+            </div>
+          ))}
         </div>
       </section>
 

@@ -1,7 +1,7 @@
 import { ArrowLeft, CheckCircle, FileSpreadsheet, UploadCloud, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Page } from '../App';
-import { api, fetchPatients, validateDatasetImport, type ImportValidationReport, type PatientSummary } from '../lib/api';
+import { api, commitDatasetImport, fetchPatients, validateDatasetImport, type ImportCommitReport, type ImportValidationReport, type PatientSummary } from '../lib/api';
 
 interface Props {
   patientId?: number;
@@ -98,6 +98,7 @@ export default function UploadStudy({ patientId, setPage }: Props) {
   const [csvFiles, setCsvFiles] = useState<Record<CsvKey, File | null>>({ patients: null, studies: null, nodules: null, measurements: null });
   const [validating, setValidating] = useState(false);
   const [validationReport, setValidationReport] = useState<ImportValidationReport | null>(null);
+  const [commitReport, setCommitReport] = useState<ImportCommitReport | null>(null);
   const [validationMessage, setValidationMessage] = useState('');
 
   useEffect(() => {
@@ -139,11 +140,40 @@ export default function UploadStudy({ patientId, setPage }: Props) {
     });
     setValidating(true);
     setValidationMessage('');
+    setCommitReport(null);
     try {
       const report = await validateDatasetImport(formData);
       setValidationReport(report);
-    } catch (error) {
+    } catch {
       setValidationMessage('校验失败，请确认后端服务已启动，且 CSV 文件为 UTF-8 编码。');
+    } finally {
+      setValidating(false);
+    }
+  }
+
+  async function handleCommitDataset() {
+    const missing = csvInputs.filter((item) => !csvFiles[item.key]).map((item) => item.fileName);
+    if (missing.length) {
+      setValidationMessage(`请先选择：${missing.join('、')}`);
+      return;
+    }
+    const formData = new FormData();
+    csvInputs.forEach((item) => {
+      const selected = csvFiles[item.key];
+      if (selected) formData.append(item.key, selected);
+    });
+    setValidating(true);
+    setValidationMessage('');
+    try {
+      const report = await commitDatasetImport(formData);
+      setCommitReport(report);
+      setValidationReport(report.validation);
+      if (report.committed) {
+        setValidationMessage(report.message);
+        fetchPatients().then(setPatients);
+      }
+    } catch {
+      setValidationMessage('导入失败，请确认后端服务已启动，且 CSV 文件仍可读取。');
     } finally {
       setValidating(false);
     }
@@ -195,10 +225,19 @@ export default function UploadStudy({ patientId, setPage }: Props) {
           ))}
         </div>
         <div className="button-row">
-          <button className="primary" onClick={handleValidateDataset} disabled={validating}><FileSpreadsheet size={17} /> {validating ? '校验中...' : '校验数据集'}</button>
+          <button className="primary" onClick={handleValidateDataset} disabled={validating}><FileSpreadsheet size={17} /> {validating ? '处理中...' : '校验数据集'}</button>
+          <button className="ghost" onClick={handleCommitDataset} disabled={validating || !validationReport?.valid}>导入数据库</button>
           <button className="ghost" onClick={() => setPage({ name: 'datasetSpec' })}>查看数据集规范</button>
         </div>
-        {validationMessage && <p className="info-banner">{validationMessage}</p>}
+        {validationMessage && <p className={commitReport?.committed ? 'success-banner' : 'info-banner'}>{validationMessage}</p>}
+        {commitReport && (
+          <div className="validation-summary">
+            <div><span>患者</span><strong>+{commitReport.counts.patients_created} / 更新 {commitReport.counts.patients_updated}</strong></div>
+            <div><span>检查</span><strong>+{commitReport.counts.studies_created} / 更新 {commitReport.counts.studies_updated}</strong></div>
+            <div><span>结节</span><strong>+{commitReport.counts.nodules_created} / 更新 {commitReport.counts.nodules_updated}</strong></div>
+            <div><span>测量</span><strong>+{commitReport.counts.measurements_created} / 更新 {commitReport.counts.measurements_updated}</strong></div>
+          </div>
+        )}
         {validationReport && <ValidationReport report={validationReport} />}
       </section>
     </div>

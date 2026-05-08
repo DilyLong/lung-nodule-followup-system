@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
+from sqlalchemy.orm import Session
 
-from ..schemas import ImportFileValidationSummary, ImportValidationIssue, ImportValidationReport, ImportValidationSummary
+from ..database import get_db
+from ..models import Nodule, NoduleMeasurement, Patient, Study
+from ..schemas import ImportCommitCounts, ImportCommitReport, ImportFileValidationSummary, ImportValidationIssue, ImportValidationReport, ImportValidationSummary
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -238,6 +241,149 @@ def _validate_references(data: dict[str, list[dict[str, str]]], issues: list[Imp
             issues.append(_issue("measurements.csv", "error", "测量记录未匹配到 nodules.csv 中的结节 ID", index, "nodule_id"))
 
 
+def _uploaded_file_map(patients: UploadFile, studies: UploadFile, nodules: UploadFile, measurements: UploadFile) -> dict[str, UploadFile]:
+    return {
+        "patients.csv": patients,
+        "studies.csv": studies,
+        "nodules.csv": nodules,
+        "measurements.csv": measurements,
+    }
+
+
+def _validate_uploaded_files(uploaded_files: dict[str, UploadFile]) -> tuple[ImportValidationReport, dict[str, list[dict[str, str]]]]:
+    issues: list[ImportValidationIssue] = []
+    file_summaries: list[ImportFileValidationSummary] = []
+    data: dict[str, list[dict[str, str]]] = {}
+
+    for file_name in REQUIRED_IMPORT_FILES:
+        uploaded_files[file_name].file.seek(0)
+        rows, headers = _read_csv(file_name, uploaded_files[file_name], issues)
+        summary = _validate_headers(file_name, headers, issues)
+        summary.row_count = len(rows)
+        file_summaries.append(summary)
+        data[file_name] = rows
+        _validate_rows(file_name, rows, issues)
+
+    _validate_references(data, issues)
+    error_count = sum(1 for issue in issues if issue.severity == "error")
+    warning_count = sum(1 for issue in issues if issue.severity == "warning")
+    report = ImportValidationReport(
+        valid=error_count == 0,
+        summary=ImportValidationSummary(
+            file_count=len(REQUIRED_IMPORT_FILES),
+            total_rows=sum(summary.row_count for summary in file_summaries),
+            error_count=error_count,
+            warning_count=warning_count,
+        ),
+        files=file_summaries,
+        issues=issues,
+    )
+    return report, data
+
+
+def _value(row: dict[str, str], key: str, default: str = "") -> str:
+    return row.get(key) or default
+
+
+def _float_value(row: dict[str, str], key: str, default: float) -> float:
+    value = row.get(key, "")
+    return float(value) if value != "" else default
+
+
+def _int_value(row: dict[str, str], key: str, default: int) -> int:
+    value = row.get(key, "")
+    return int(value) if value != "" else default
+
+
+def _date_value(row: dict[str, str], key: str) -> date:
+    return datetime.strptime(row[key], "%Y-%m-%d").date()
+
+
+def _upsert_import_data(data: dict[str, list[dict[str, str]]], db: Session) -> tuple[ImportCommitCounts, list[int]]:
+    counts = ImportCommitCounts()
+    patients_by_code: dict[str, Patient] = {}
+    studies_by_key: dict[tuple[str, str], Study] = {}
+    nodules_by_key: dict[tuple[str, str], Nodule] = {}
+
+    for row in data["patients.csv"]:
+        patient_code = row["patient_code"]
+        patient = db.query(Patient).filter(Patient.patient_code == patient_code).first()
+        if patient:
+            counts.patients_updated += 1
+        else:
+            patient = Patient(patient_code=patient_code, name=_value(row, "name", patient_code), sex=row["sex"], age=_int_value(row, "age", 0))
+            db.add(patient)
+            counts.patients_created += 1
+        patient.name = _value(row, "name", patient_code)
+        patient.sex = row["sex"]
+        patient.age = _int_value(row, "age", patient.age)
+        patient.smoking_history = _value(row, "smoking_history", "未记录")
+        patient.family_history = _value(row, "family_history", "无")
+        patient.primary_diagnosis = _value(row, "primary_diagnosis", "肺结节随访")
+        patients_by_code[patient_code] = patient
+    db.flush()
+
+    for row in data["studies.csv"]:
+        patient = patients_by_code[row["patient_code"]]
+        study_date = _date_value(row, "study_date")
+        study = db.query(Study).filter(Study.patient_id == patient.id, Study.study_date == study_date).first()
+        if study:
+            counts.studies_updated += 1
+        else:
+            study = Study(patient_id=patient.id, study_date=study_date)
+            db.add(study)
+            counts.studies_created += 1
+        study.modality = _value(row, "modality", "CT")
+        study.scanner = _value(row, "scanner", "CSV 导入 CT")
+        study.slice_thickness_mm = _float_value(row, "slice_thickness_mm", 1.0)
+        study.series_description = _value(row, "series_description", _value(row, "series_instance_uid", "CSV 导入检查"))
+        study.file_name = _value(row, "dicom_relative_path", None) or None
+        study.status = "CSV 已导入，待 DICOM 关联"
+        studies_by_key[(row["patient_code"], row["study_date"])] = study
+    db.flush()
+
+    for row in data["nodules.csv"]:
+        patient = patients_by_code[row["patient_code"]]
+        nodule = (
+            db.query(Nodule)
+            .filter(Nodule.patient_id == patient.id, Nodule.label.in_([row["nodule_id"], _value(row, "nodule_label", row["nodule_id"])]))
+            .first()
+        )
+        if nodule:
+            counts.nodules_updated += 1
+        else:
+            nodule = Nodule(patient_id=patient.id, label=row["nodule_id"], lobe=row["lobe"], nodule_type=row["nodule_type"], baseline_impression="")
+            db.add(nodule)
+            counts.nodules_created += 1
+        nodule.label = _value(row, "nodule_label", row["nodule_id"])
+        nodule.lobe = row["lobe"]
+        nodule.nodule_type = row["nodule_type"]
+        nodule.baseline_impression = _value(row, "baseline_impression", "CSV 导入结节")
+        nodules_by_key[(row["patient_code"], row["nodule_id"])] = nodule
+    db.flush()
+
+    for row in data["measurements.csv"]:
+        nodule = nodules_by_key[(row["patient_code"], row["nodule_id"])]
+        study = studies_by_key[(row["patient_code"], row["study_date"])]
+        measurement = db.query(NoduleMeasurement).filter(NoduleMeasurement.nodule_id == nodule.id, NoduleMeasurement.study_id == study.id).first()
+        if measurement:
+            counts.measurements_updated += 1
+        else:
+            measurement = NoduleMeasurement(nodule_id=nodule.id, study_id=study.id, thumbnail_seed=study.id)
+            db.add(measurement)
+            counts.measurements_created += 1
+        measurement.diameter_mm = _float_value(row, "diameter_mm", 1.0)
+        measurement.volume_mm3 = _float_value(row, "volume_mm3", round(4 / 3 * 3.14159 * (measurement.diameter_mm / 2) ** 3, 2))
+        measurement.mean_hu = _float_value(row, "mean_hu", -600.0 if "磨玻璃" in nodule.nodule_type else 40.0)
+        measurement.min_hu = _float_value(row, "min_hu", None) if row.get("min_hu") else None
+        measurement.max_hu = _float_value(row, "max_hu", None) if row.get("max_hu") else None
+        measurement.roi_area_mm2 = _float_value(row, "roi_area_mm2", None) if row.get("roi_area_mm2") else None
+        measurement.solid_component_percent = _float_value(row, "solid_component_percent", 0.0)
+        measurement.spiculation_score = _float_value(row, "spiculation_score", 0.0)
+        measurement.lobulation_score = _float_value(row, "lobulation_score", 0.0)
+        measurement.pleural_retraction_score = _float_value(row, "pleural_retraction_score", 0.0)
+    db.flush()
+    return counts, [patient.id for patient in patients_by_code.values()]
 @router.get("/spec")
 def import_spec() -> dict:
     return DATASET_SPEC
@@ -250,35 +396,22 @@ def validate_import_dataset(
     nodules: UploadFile = File(...),
     measurements: UploadFile = File(...),
 ) -> ImportValidationReport:
-    uploaded_files = {
-        "patients.csv": patients,
-        "studies.csv": studies,
-        "nodules.csv": nodules,
-        "measurements.csv": measurements,
-    }
-    issues: list[ImportValidationIssue] = []
-    file_summaries: list[ImportFileValidationSummary] = []
-    data: dict[str, list[dict[str, str]]] = {}
+    report, _ = _validate_uploaded_files(_uploaded_file_map(patients, studies, nodules, measurements))
+    return report
 
-    for file_name in REQUIRED_IMPORT_FILES:
-        rows, headers = _read_csv(file_name, uploaded_files[file_name], issues)
-        summary = _validate_headers(file_name, headers, issues)
-        summary.row_count = len(rows)
-        file_summaries.append(summary)
-        data[file_name] = rows
-        _validate_rows(file_name, rows, issues)
 
-    _validate_references(data, issues)
-    error_count = sum(1 for issue in issues if issue.severity == "error")
-    warning_count = sum(1 for issue in issues if issue.severity == "warning")
-    return ImportValidationReport(
-        valid=error_count == 0,
-        summary=ImportValidationSummary(
-            file_count=len(REQUIRED_IMPORT_FILES),
-            total_rows=sum(summary.row_count for summary in file_summaries),
-            error_count=error_count,
-            warning_count=warning_count,
-        ),
-        files=file_summaries,
-        issues=issues,
-    )
+@router.post("/commit", response_model=ImportCommitReport)
+def commit_import_dataset(
+    patients: UploadFile = File(...),
+    studies: UploadFile = File(...),
+    nodules: UploadFile = File(...),
+    measurements: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> ImportCommitReport:
+    report, data = _validate_uploaded_files(_uploaded_file_map(patients, studies, nodules, measurements))
+    empty_counts = ImportCommitCounts()
+    if not report.valid:
+        return ImportCommitReport(committed=False, validation=report, counts=empty_counts, patient_ids=[], message="CSV 存在错误，未写入数据库。")
+    counts, patient_ids = _upsert_import_data(data, db)
+    db.commit()
+    return ImportCommitReport(committed=True, validation=report, counts=counts, patient_ids=patient_ids, message="CSV 队列已导入数据库，可在病例工作台查看。")

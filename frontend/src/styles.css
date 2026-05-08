@@ -217,6 +217,13 @@ td svg { vertical-align: middle; }
 .status-icon-ok { color: #16a34a; margin-top: 2px; }
 .status-icon-missing { color: #dc2626; margin-top: 2px; }
 
+.window-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 12px 0; }
+.window-controls label { display: grid; gap: 6px; color: #475569; font-size: 13px; }
+.action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.action-card { border: 1px solid #e2e8f0; border-radius: 14px; background: #f8fafc; padding: 14px; display: grid; gap: 8px; }
+.action-card.warning { border-color: #fed7aa; background: #fff7ed; }
+.action-card strong { color: #0f172a; }
+.action-card span { color: #64748b; font-size: 13px; line-height: 1.5; }
 .dependency-ok { color: #166534; display: inline-flex; align-items: center; gap: 6px; font-weight: 800; }
 .dependency-missing { color: #b91c1c; display: inline-flex; align-items: center; gap: 6px; font-weight: 800; }
 

@@ -270,6 +270,25 @@ class ImportValidationReport(BaseModel):
     issues: list[ImportValidationIssue]
 
 
+class ImportCommitCounts(BaseModel):
+    patients_created: int = 0
+    patients_updated: int = 0
+    studies_created: int = 0
+    studies_updated: int = 0
+    nodules_created: int = 0
+    nodules_updated: int = 0
+    measurements_created: int = 0
+    measurements_updated: int = 0
+
+
+class ImportCommitReport(BaseModel):
+    committed: bool
+    validation: ImportValidationReport
+    counts: ImportCommitCounts
+    patient_ids: list[int] = []
+    message: str
+
+
 class ModelSelfCheckIssue(BaseModel):
     field: str
     severity: str

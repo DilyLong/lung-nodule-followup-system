@@ -189,6 +189,14 @@ export async function createReport(analysisId: number) {
   return data;
 }
 
+export function reportDocUrl(reportId: number) {
+  return `${api.defaults.baseURL}/reports/${reportId}/export.doc`;
+}
+
+export function reportPrintUrl(reportId: number) {
+  return `${api.defaults.baseURL}/reports/${reportId}/print.html`;
+}
+
 export async function updateReport(reportId: number, payload: ReportUpdatePayload) {
   const { data } = await api.put<Report>(`/reports/${reportId}`, payload);
   return data;
@@ -326,6 +334,23 @@ export interface ImportValidationReport {
   issues: ImportValidationIssue[];
 }
 
+export interface ImportCommitReport {
+  committed: boolean;
+  validation: ImportValidationReport;
+  counts: {
+    patients_created: number;
+    patients_updated: number;
+    studies_created: number;
+    studies_updated: number;
+    nodules_created: number;
+    nodules_updated: number;
+    measurements_created: number;
+    measurements_updated: number;
+  };
+  patient_ids: number[];
+  message: string;
+}
+
 function buildDownloadUrl(path: string, patientId?: number | null) {
   const baseUrl = api.defaults.baseURL ?? '';
   const suffix = patientId ? `?patient_id=${patientId}` : '';
@@ -355,6 +380,11 @@ export async function fetchImportSpec() {
 
 export async function validateDatasetImport(formData: FormData) {
   const { data } = await api.post<ImportValidationReport>('/imports/validate', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+  return data;
+}
+
+export async function commitDatasetImport(formData: FormData) {
+  const { data } = await api.post<ImportCommitReport>('/imports/commit', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
   return data;
 }
 
@@ -425,6 +455,9 @@ export interface ModelSelfCheckReport {
     backend?: string;
     fallback_reason?: string;
     model_artifact?: string;
+    model_artifact_hash?: string | null;
+    model_input_feature_count?: number;
+    inference_started_at?: string;
     contributions?: Array<Record<string, unknown>>;
   };
   runtime_status: ModelRuntimeStatus;
@@ -464,6 +497,7 @@ export interface SystemStatus {
     final_report: null | { id: number; patient_id: number; analysis_id: number; created_at: string; status: string; finalized_at: string | null };
   };
   readiness: Array<{ key: string; label: string; available: boolean }>;
+  actions: Array<{ key: string; severity: 'info' | 'warning' | string; title: string; description: string; target_page: 'upload' | 'dashboard' | 'modelStatus' | string }>;
 }
 
 export async function fetchSystemStatus() {

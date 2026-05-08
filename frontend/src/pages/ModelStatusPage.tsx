@@ -44,6 +44,7 @@ function checkNameText(name: string) {
     artifact_status: '权重与依赖状态',
     input_schema: '输入 Schema 校验',
     inference: '推理 dry-run',
+    output_contract: '输出契约校验',
   };
   return labels[name] ?? name;
 }
@@ -145,6 +146,7 @@ export default function ModelStatusPage({ setPage }: Props) {
                 <th>文件状态</th>
                 <th>依赖</th>
                 <th>依赖状态</th>
+                <th>Hash</th>
               </tr>
             </thead>
             <tbody>
@@ -155,6 +157,7 @@ export default function ModelStatusPage({ setPage }: Props) {
                   <td><span className={`model-status-chip ${artifact.exists ? artifact.status === 'missing_dependency' ? 'fallback' : 'real' : 'proxy'}`}>{statusText(artifact.status)}</span></td>
                   <td>{artifact.dependency}</td>
                   <td>{artifact.dependency_available ? <span className="dependency-ok"><CheckCircle size={15} /> 可用</span> : <span className="dependency-missing"><XCircle size={15} /> 不可用</span>}</td>
+                  <td>{artifact.sha256 ?? '-'}</td>
                 </tr>
               ))}
             </tbody>
@@ -249,6 +252,9 @@ export default function ModelStatusPage({ setPage }: Props) {
               <div><span>风险评分</span><strong>{selfCheck.inference.risk_score ?? '—'}</strong></div>
               <div><span>风险分层</span><strong>{selfCheck.inference.risk_level ?? '—'}</strong></div>
               <div><span>推理状态</span><strong>{modelStatusText(selfCheck.inference.model_status)}</strong></div>
+              <div><span>输入特征</span><strong>{selfCheck.inference.model_input_feature_count ?? '—'}</strong></div>
+              <div><span>Artifact Hash</span><strong>{selfCheck.inference.model_artifact_hash ?? '—'}</strong></div>
+              <div><span>推理时间</span><strong>{selfCheck.inference.inference_started_at ? new Date(selfCheck.inference.inference_started_at).toLocaleString() : '—'}</strong></div>
             </div>
           )}
 

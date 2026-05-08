@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, Image as ImageIcon, Link2, RefreshCw, Trash2 } from 'lucide-react';
 import { MouseEvent, useEffect, useMemo, useState } from 'react';
 import {
+  createPatientNodule,
   confirmAnnotationMatch,
   createMeasurementFromAnnotation,
   createNoduleAnnotation,
@@ -44,6 +45,8 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
   const [measurementMessage, setMeasurementMessage] = useState('');
   const [candidateAnnotationId, setCandidateAnnotationId] = useState<number | null>(null);
   const [matchCandidates, setMatchCandidates] = useState<MatchCandidate[]>([]);
+  const [windowCenter, setWindowCenter] = useState(0);
+  const [windowWidth, setWindowWidth] = useState(100);
 
   useEffect(() => {
     const firstId = studiesWithSlices[0]?.id ?? null;
@@ -63,6 +66,8 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
       .then(async (data) => {
         setSeries(data);
         setSliceIndex(Math.floor(Math.max(data.slices.length - 1, 0) / 2));
+        setWindowCenter(data.window_center ?? 0);
+        setWindowWidth(data.window_width ?? 100);
         await loadAnnotations(studyId);
       })
       .catch(() => {
@@ -141,6 +146,7 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
     setMeasurementMessage(formatMeasurementMessage(result));
     await loadAnnotations(studyId);
     onMeasurementChanged?.();
+    return result;
   }
 
   async function handleShowCandidates(annotationId: number) {
@@ -157,12 +163,32 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
   async function handleConfirmCandidate(annotationId: number, noduleId: number) {
     if (!studyId) return;
     await confirmAnnotationMatch(annotationId, noduleId);
-    setMeasurementMessage('已确认该标注对应既往结节。');
+    const result = await handleCreateMeasurement(annotationId);
+    setMeasurementMessage(result ? formatMeasurementMessage(result) : '已确认该标注对应既往结节。');
     setCandidateAnnotationId(null);
     setMatchCandidates([]);
     await loadAnnotations(studyId);
   }
 
+  function clampSlice(index: number) {
+    return Math.max(0, Math.min(index, (series?.slices.length ?? 1) - 1));
+  }
+
+  function imageFilter() {
+    const contrast = Math.max(60, Math.min(220, 15000 / Math.max(windowWidth, 1)));
+    const brightness = Math.max(50, Math.min(180, 100 + windowCenter / 12));
+    return { filter: `contrast(${contrast.toFixed(0)}%) brightness(${brightness.toFixed(0)}%)` };
+  }
+
+  async function handleCreateNewNodule(annotation: NoduleAnnotation) {
+    const nodule = await createPatientNodule(patientId, {
+      label: `新结节-${annotation.id}`,
+      lobe: '待医生确认',
+      nodule_type: annotation.nodule_type,
+      baseline_impression: annotation.note || '由跨期标注工作流创建',
+    });
+    await handleConfirmCandidate(annotation.id, nodule.id);
+  }
   if (studiesWithSlices.length === 0) {
     return (
       <div className="dicom-empty">
@@ -188,7 +214,8 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
           <div className="dicom-meta">
             <span>{series.slice_count} 层</span>
             <span>{series.rows ?? '-'} × {series.columns ?? '-'}</span>
-            <span>窗位 {series.window_center ?? '-'} / 窗宽 {series.window_width ?? '-'}</span>
+            <span>原始窗位 {series.window_center ?? '-'} / 窗宽 {series.window_width ?? '-'}</span>
+            <span>显示窗位 {windowCenter.toFixed(0)} / 窗宽 {windowWidth.toFixed(0)}</span>
           </div>
         )}
       </div>
@@ -200,8 +227,8 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
           <button className="slice-button" onClick={() => setSliceIndex((value) => Math.max(value - 1, 0))}>
             <ChevronLeft size={20} />
           </button>
-          <div className="slice-image-wrap" onClick={handleImageClick}>
-            <img src={sliceImageUrl(currentSlice.id)} alt={`CT slice ${sliceIndex + 1}`} />
+          <div className="slice-image-wrap" onClick={handleImageClick} onWheel={(event) => { event.preventDefault(); setSliceIndex((value) => clampSlice(value + (event.deltaY > 0 ? 1 : -1))); setDraft(null); }}>
+            <img src={sliceImageUrl(currentSlice.id)} alt={`CT slice ${sliceIndex + 1}`} style={imageFilter()} />
             {currentAnnotations.map((annotation) => (
               <div
                 className="annotation-marker saved"
@@ -227,6 +254,13 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
           <button className="slice-button" onClick={() => setSliceIndex((value) => Math.min(value + 1, series.slices.length - 1))}>
             <ChevronRight size={20} />
           </button>
+        </div>
+      )}
+
+      {series && series.slices.length > 0 && (
+        <div className="window-controls">
+          <label>显示窗位<input type="range" min={-800} max={400} value={windowCenter} onChange={(event) => setWindowCenter(Number(event.target.value))} /></label>
+          <label>显示窗宽<input type="range" min={80} max={1800} value={windowWidth} onChange={(event) => setWindowWidth(Number(event.target.value))} /></label>
         </div>
       )}
 
@@ -286,11 +320,16 @@ export default function CtSliceViewer({ studies, patientId, onMeasurementChanged
                     {matchCandidates.length === 0 && <span>暂无候选结节。</span>}
                     {matchCandidates.map((candidate) => (
                       <button key={candidate.nodule_id} onClick={() => handleConfirmCandidate(annotation.id, candidate.nodule_id)}>
-                        <strong>{candidate.label} · {candidate.lobe}</strong>
+                        <strong>匹配既往：{candidate.label} · {candidate.lobe}</strong>
                         <span>{candidate.nodule_type} · 匹配度 {(candidate.score * 100).toFixed(0)}%</span>
                         <small>{candidate.latest_diameter_mm ? `最近 ${candidate.latest_diameter_mm.toFixed(1)} mm · ${candidate.latest_study_date}` : '暂无既往测量'} · {candidate.reason}</small>
                       </button>
                     ))}
+                    <button onClick={() => handleCreateNewNodule(annotation)}>
+                      <strong>保留为新结节</strong>
+                      <span>创建独立结节并生成本期测量</span>
+                      <small>适用于新发结节或无法可靠匹配既往目标时。</small>
+                    </button>
                   </div>
                 )}
               </div>

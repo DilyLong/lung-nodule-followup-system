@@ -1,7 +1,7 @@
 import { ArrowLeft, CheckCircle, Copy, Download, Printer, Save } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Page } from '../App';
-import { fetchLatestReport, updateReport, type Report } from '../lib/api';
+import { fetchLatestReport, reportDocUrl, reportPrintUrl, updateReport, type Report } from '../lib/api';
 
 interface Props {
   patientId: number;
@@ -97,98 +97,8 @@ function renderMarkdown(markdown: string) {
   return nodes;
 }
 
-function markdownToHtml(markdown: string) {
-  const lines = markdown.split('\n');
-  const chunks: string[] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index].trim();
-    if (!line) {
-      index += 1;
-      continue;
-    }
-
-    if (line.startsWith('# ')) {
-      chunks.push(`<h1>${escapeHtml(line.slice(2))}</h1>`);
-      index += 1;
-      continue;
-    }
-
-    if (line.startsWith('## ')) {
-      chunks.push(`<h2>${escapeHtml(line.slice(3))}</h2>`);
-      index += 1;
-      continue;
-    }
-
-    if (line.startsWith('|')) {
-      const tableLines: string[] = [];
-      while (index < lines.length && lines[index].trim().startsWith('|')) {
-        tableLines.push(lines[index].trim());
-        index += 1;
-      }
-      const rows = tableLines.map(splitTableRow).filter((cells) => !isSeparatorRow(cells));
-      const [header, ...body] = rows;
-      chunks.push([
-        '<table>',
-        `<thead><tr>${header.map((cell) => `<th>${escapeHtml(cell)}</th>`).join('')}</tr></thead>`,
-        `<tbody>${body.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody>`,
-        '</table>',
-      ].join(''));
-      continue;
-    }
-
-    if (line.startsWith('- ')) {
-      const items: string[] = [];
-      while (index < lines.length && lines[index].trim().startsWith('- ')) {
-        items.push(lines[index].trim().slice(2));
-        index += 1;
-      }
-      chunks.push(`<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`);
-      continue;
-    }
-
-    const paragraph: string[] = [];
-    while (index < lines.length) {
-      const nextLine = lines[index].trim();
-      if (!nextLine || nextLine.startsWith('# ') || nextLine.startsWith('## ') || nextLine.startsWith('|') || nextLine.startsWith('- ')) break;
-      paragraph.push(nextLine);
-      index += 1;
-    }
-    chunks.push(`<p>${escapeHtml(paragraph.join(' '))}</p>`);
-  }
-
-  return chunks.join('\n');
-}
-
 function finalMarkdown(contentMarkdown: string, doctorOpinion: string, followupPlan: string) {
   return `${contentMarkdown.trim()}\n\n## 医生编辑确认\n\n- 医生意见：${doctorOpinion.trim() || '未填写'}\n- 确认随访建议：${followupPlan.trim() || '未填写'}\n`;
-}
-
-function buildWordDocument(report: Report, contentMarkdown: string, doctorOpinion: string, followupPlan: string) {
-  return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(report.title)}</title>
-  <style>
-    body { font-family: SimSun, "Microsoft YaHei", Arial, sans-serif; line-height: 1.75; color: #111827; }
-    h1 { text-align: center; font-size: 22pt; margin-bottom: 24pt; }
-    h2 { font-size: 15pt; border-bottom: 1px solid #d1d5db; padding-bottom: 6pt; margin-top: 20pt; }
-    table { width: 100%; border-collapse: collapse; margin: 12pt 0; }
-    th, td { border: 1px solid #9ca3af; padding: 6pt 8pt; text-align: left; }
-    th { background: #f3f4f6; }
-    ul { margin: 8pt 0 12pt 20pt; }
-  </style>
-</head>
-<body>
-${markdownToHtml(finalMarkdown(contentMarkdown, doctorOpinion, followupPlan))}
-</body>
-</html>`;
-}
-
-function reportFileName(report: Report) {
-  return `${report.title}-${report.id}`.replace(/[\\/:*?"<>|]/g, '-');
 }
 
 function statusText(report: Report) {
@@ -216,7 +126,7 @@ export default function ReportView({ patientId, setPage }: Props) {
   const previewMarkdown = useMemo(() => finalMarkdown(contentMarkdown, doctorOpinion, followupPlan), [contentMarkdown, doctorOpinion, followupPlan]);
 
   async function saveReport(status: 'draft' | 'final') {
-    if (!report) return;
+    if (!report || report.status === 'final') return;
     setSaving(true);
     setMessage('');
     try {
@@ -241,18 +151,13 @@ export default function ReportView({ patientId, setPage }: Props) {
   }
 
   function printReport() {
-    window.print();
+    if (!report) return;
+    window.open(reportPrintUrl(report.id), '_blank');
   }
 
   function downloadWord() {
     if (!report) return;
-    const blob = new Blob([buildWordDocument(report, contentMarkdown, doctorOpinion, followupPlan)], { type: 'application/msword;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${reportFileName(report)}.doc`;
-    link.click();
-    URL.revokeObjectURL(url);
+    window.location.href = reportDocUrl(report.id);
   }
 
   return (
@@ -279,23 +184,23 @@ export default function ReportView({ patientId, setPage }: Props) {
               <span className={`model-status-chip ${report.status === 'final' ? 'real' : 'fallback'}`}>{statusText(report)}</span>
             </div>
             <div className="button-row">
-              <button className="ghost" onClick={() => saveReport('draft')} disabled={saving}><Save size={17} /> 保存草稿</button>
-              <button className="primary" onClick={() => saveReport('final')} disabled={saving}><CheckCircle size={17} /> 确认最终版</button>
+              <button className="ghost" onClick={() => saveReport('draft')} disabled={saving || report.status === 'final'}><Save size={17} /> 保存草稿</button>
+              <button className="primary" onClick={() => saveReport('final')} disabled={saving || report.status === 'final'}><CheckCircle size={17} /> 确认最终版</button>
             </div>
           </div>
           {message && <p className="success-banner compact">{message}</p>}
           <label>
             报告正文 Markdown
-            <textarea value={contentMarkdown} onChange={(event) => setContentMarkdown(event.target.value)} rows={16} />
+            <textarea value={contentMarkdown} onChange={(event) => setContentMarkdown(event.target.value)} rows={16} disabled={report.status === 'final'} />
           </label>
           <div className="report-editor-grid">
             <label>
               医生意见
-              <textarea value={doctorOpinion} onChange={(event) => setDoctorOpinion(event.target.value)} rows={5} placeholder="填写影像判断、临床解释或需补充的检查意见" />
+              <textarea value={doctorOpinion} onChange={(event) => setDoctorOpinion(event.target.value)} rows={5} disabled={report.status === 'final'} placeholder="填写影像判断、临床解释或需补充的检查意见" />
             </label>
             <label>
               医生确认随访建议
-              <textarea value={followupPlan} onChange={(event) => setFollowupPlan(event.target.value)} rows={5} placeholder="填写或修改复查时间、MDT/手术/穿刺建议" />
+              <textarea value={followupPlan} onChange={(event) => setFollowupPlan(event.target.value)} rows={5} disabled={report.status === 'final'} placeholder="填写或修改复查时间、MDT/手术/穿刺建议" />
             </label>
           </div>
         </section>

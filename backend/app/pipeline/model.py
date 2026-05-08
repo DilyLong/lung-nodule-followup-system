@@ -526,6 +526,24 @@ def _model_input_preview(model_input: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _output_contract_issues(inference: dict[str, Any] | None, expected_feature_count: int) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    if inference is None:
+        return [{"field": "inference", "severity": "error", "message": "Inference output is missing"}]
+    score = inference.get("risk_score")
+    if not isinstance(score, int | float) or not 0 <= float(score) <= 1:
+        issues.append({"field": "risk_score", "severity": "error", "message": "risk_score must be a 0-1 number"})
+    if inference.get("risk_level") not in {"低风险", "中风险", "高风险"}:
+        issues.append({"field": "risk_level", "severity": "error", "message": "risk_level must be 低风险/中风险/高风险"})
+    for field in ["model_status", "model_version", "backend"]:
+        if not inference.get(field):
+            issues.append({"field": field, "severity": "error", "message": f"{field} is required"})
+    feature_count = inference.get("model_input_feature_count")
+    if feature_count != expected_feature_count:
+        issues.append({"field": "model_input_feature_count", "severity": "error", "message": f"Expected {expected_feature_count}, got {feature_count}"})
+    return issues
+
+
 def run_model_self_check() -> dict[str, Any]:
     runtime_status = model_runtime_status()
     model_input = build_demo_self_check_input()
@@ -544,6 +562,7 @@ def run_model_self_check() -> dict[str, Any]:
     ]
     issues = list(schema_issues)
     inference: dict[str, Any] | None = None
+    expected_feature_count = int(_feature_vector(model_input).shape[1])
     if not schema_issues:
         try:
             inference = predict_progression_risk(
@@ -568,6 +587,15 @@ def run_model_self_check() -> dict[str, Any]:
                 issues.append({"field": "model_artifact", "severity": "error", "message": inference.get("fallback_reason", "Real model dry-run failed")})
             elif inference_status == "surrogate_no_weights":
                 issues.append({"field": "model_artifact", "severity": "warning", "message": "No real model weights found; surrogate dry-run passed"})
+            output_issues = _output_contract_issues(inference, expected_feature_count)
+            checks.append(
+                {
+                    "name": "output_contract",
+                    "passed": not output_issues,
+                    "message": "Risk output contract is valid" if not output_issues else f"{len(output_issues)} output contract issue(s) found",
+                }
+            )
+            issues.extend(output_issues)
         except Exception as exc:
             checks.append({"name": "inference", "passed": False, "message": str(exc)})
             issues.append({"field": "inference", "severity": "error", "message": str(exc)})

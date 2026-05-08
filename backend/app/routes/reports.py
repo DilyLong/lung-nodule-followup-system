@@ -1,7 +1,9 @@
 import json
 from datetime import datetime
+from html import escape
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
@@ -116,6 +118,92 @@ def build_report_markdown(patient: Patient, analysis: AnalysisResult) -> str:
 """
 
 
+def _final_markdown(report: Report) -> str:
+    return f"""{report.content_markdown.strip()}
+
+## 医生编辑确认
+
+- 医生意见：{report.doctor_opinion or '未填写'}
+- 确认随访建议：{report.followup_plan or '未填写'}
+"""
+
+
+def _markdown_to_html(markdown: str) -> str:
+    lines = markdown.splitlines()
+    chunks: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        if not line:
+            index += 1
+            continue
+        if line.startswith("# "):
+            chunks.append(f"<h1>{escape(line[2:])}</h1>")
+            index += 1
+            continue
+        if line.startswith("## "):
+            chunks.append(f"<h2>{escape(line[3:])}</h2>")
+            index += 1
+            continue
+        if line.startswith("|"):
+            table_lines = []
+            while index < len(lines) and lines[index].strip().startswith("|"):
+                table_lines.append(lines[index].strip())
+                index += 1
+            rows = []
+            for table_line in table_lines:
+                cells = [cell.strip() for cell in table_line.strip("|").split("|")]
+                if all(set(cell) <= {"-", ":"} and len(cell) >= 3 for cell in cells):
+                    continue
+                rows.append(cells)
+            if rows:
+                header, *body = rows
+                head = "".join(f"<th>{escape(cell)}</th>" for cell in header)
+                body_html = "".join("<tr>" + "".join(f"<td>{escape(cell)}</td>" for cell in row) + "</tr>" for row in body)
+                chunks.append(f"<table><thead><tr>{head}</tr></thead><tbody>{body_html}</tbody></table>")
+            continue
+        if line.startswith("- "):
+            items = []
+            while index < len(lines) and lines[index].strip().startswith("- "):
+                items.append(lines[index].strip()[2:])
+                index += 1
+            chunks.append("<ul>" + "".join(f"<li>{escape(item)}</li>" for item in items) + "</ul>")
+            continue
+        paragraph = []
+        while index < len(lines):
+            next_line = lines[index].strip()
+            if not next_line or next_line.startswith(("# ", "## ", "|", "- ")):
+                break
+            paragraph.append(next_line)
+            index += 1
+        chunks.append(f"<p>{escape(' '.join(paragraph))}</p>")
+    return "\n".join(chunks)
+
+
+def _report_html(report: Report) -> str:
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset=\"utf-8\" />
+  <title>{escape(report.title)}</title>
+  <style>
+    body {{ font-family: SimSun, \"Microsoft YaHei\", Arial, sans-serif; line-height: 1.75; color: #111827; max-width: 920px; margin: 32px auto; }}
+    h1 {{ text-align: center; font-size: 24pt; }}
+    h2 {{ font-size: 15pt; border-bottom: 1px solid #d1d5db; padding-bottom: 6pt; margin-top: 22pt; }}
+    table {{ width: 100%; border-collapse: collapse; margin: 12pt 0; }}
+    th, td {{ border: 1px solid #9ca3af; padding: 6pt 8pt; text-align: left; }}
+    th {{ background: #f3f4f6; }}
+    .meta {{ color: #64748b; text-align: center; margin-bottom: 18pt; }}
+    @media print {{ body {{ margin: 12mm auto; }} .no-print {{ display: none; }} }}
+  </style>
+</head>
+<body>
+  <div class=\"meta\">报告状态：{escape(report.status)} · 报告编号：{report.id}</div>
+  {_markdown_to_html(_final_markdown(report))}
+</body>
+</html>"""
+
+
 @router.post("/{analysis_id}", response_model=ReportRead)
 def create_report(analysis_id: int, db: Session = Depends(get_db)) -> Report:
     analysis = db.get(AnalysisResult, analysis_id)
@@ -156,6 +244,15 @@ def update_report(report_id: int, payload: ReportUpdate, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Report not found")
     if payload.status not in {"draft", "final"}:
         raise HTTPException(status_code=400, detail="status must be draft or final")
+    if report.status == "final":
+        unchanged = (
+            payload.status == "final"
+            and payload.content_markdown == report.content_markdown
+            and payload.doctor_opinion == report.doctor_opinion
+            and payload.followup_plan == report.followup_plan
+        )
+        if not unchanged:
+            raise HTTPException(status_code=409, detail="Final report is locked; create a new report to revise clinical content")
     report.content_markdown = payload.content_markdown
     report.doctor_opinion = payload.doctor_opinion
     report.followup_plan = payload.followup_plan
@@ -164,6 +261,27 @@ def update_report(report_id: int, payload: ReportUpdate, db: Session = Depends(g
     db.commit()
     db.refresh(report)
     return report
+
+
+@router.get("/{report_id}/export.doc")
+def export_report_doc(report_id: int, db: Session = Depends(get_db)) -> Response:
+    report = db.get(Report, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    filename = f"report-{report.patient_id}-{report.id}.doc"
+    return Response(
+        content=_report_html(report),
+        media_type="application/msword; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{report_id}/print.html")
+def export_report_print_html(report_id: int, db: Session = Depends(get_db)) -> HTMLResponse:
+    report = db.get(Report, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return HTMLResponse(_report_html(report))
 
 
 @router.get("/{report_id}", response_model=ReportRead)
