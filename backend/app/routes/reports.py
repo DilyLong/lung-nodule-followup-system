@@ -173,6 +173,21 @@ def build_report_markdown(patient: Patient, analysis: AnalysisResult) -> str:
 """
 
 
+def _risk_summary(analysis: AnalysisResult) -> dict[str, str]:
+    return {
+        "risk_level": analysis.risk_level,
+        "risk_score": f"{analysis.risk_score:.2f}",
+        "diameter_change": f"{analysis.diameter_change_mm:.1f} mm",
+        "volume_change": f"{analysis.volume_change_percent:.1f}%",
+        "density_change": f"{analysis.density_change_hu:.1f} HU",
+        "followup_window": _risk_followup_window(analysis.risk_level),
+    }
+
+
+def _report_watermark(report: Report) -> str:
+    return "最终版" if report.status == "final" else "草稿"
+
+
 def _final_markdown(report: Report) -> str:
     return f"""{report.content_markdown.strip()}
 
@@ -237,28 +252,72 @@ def _markdown_to_html(markdown: str) -> str:
     return "\n".join(chunks)
 
 
-def _report_html(report: Report) -> str:
+def _report_html(report: Report, analysis: AnalysisResult | None = None) -> str:
+    risk = _risk_summary(analysis) if analysis else {
+        "risk_level": "未记录",
+        "risk_score": "-",
+        "diameter_change": "-",
+        "volume_change": "-",
+        "density_change": "-",
+        "followup_window": report.followup_plan or "未记录",
+    }
+    watermark = _report_watermark(report)
     return f"""<!doctype html>
 <html>
 <head>
   <meta charset=\"utf-8\" />
   <title>{escape(report.title)}</title>
   <style>
-    body {{ font-family: SimSun, \"Microsoft YaHei\", Arial, sans-serif; line-height: 1.75; color: #111827; max-width: 920px; margin: 32px auto; }}
+    body {{ font-family: SimSun, \"Microsoft YaHei\", Arial, sans-serif; line-height: 1.75; color: #111827; max-width: 920px; margin: 32px auto; position: relative; }}
     h1 {{ text-align: center; font-size: 24pt; }}
     h2 {{ font-size: 15pt; border-bottom: 1px solid #d1d5db; padding-bottom: 6pt; margin-top: 22pt; }}
     table {{ width: 100%; border-collapse: collapse; margin: 12pt 0; }}
     th, td {{ border: 1px solid #9ca3af; padding: 6pt 8pt; text-align: left; }}
     th {{ background: #f3f4f6; }}
+    .cover {{ border: 2px solid #1d4ed8; padding: 28pt; margin-bottom: 22pt; text-align: center; }}
+    .cover h1 {{ margin: 0 0 12pt; }}
+    .cover-meta {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 8pt; margin-top: 18pt; text-align: left; }}
+    .risk-box {{ border: 1px solid #fecaca; background: #fff1f2; padding: 12pt; margin: 14pt 0; }}
+    .risk-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 8pt; }}
+    .risk-grid div {{ background: white; border: 1px solid #fecaca; padding: 8pt; }}
+    .signature-box {{ margin-top: 24pt; border: 1px solid #9ca3af; padding: 14pt; display: grid; grid-template-columns: repeat(2, 1fr); gap: 20pt; }}
+    .watermark {{ position: fixed; top: 42%; left: 12%; transform: rotate(-24deg); font-size: 72pt; color: rgba(148, 163, 184, 0.18); font-weight: 800; z-index: -1; }}
     .meta {{ color: #64748b; text-align: center; margin-bottom: 18pt; }}
-    @media print {{ body {{ margin: 12mm auto; }} .no-print {{ display: none; }} }}
+    @media print {{ body {{ margin: 12mm auto; }} .no-print {{ display: none; }} .cover {{ break-after: page; }} }}
   </style>
 </head>
 <body>
+  <div class=\"watermark\">{escape(watermark)}</div>
+  <section class=\"cover\">
+    <h1>肺结节多期 CT 智能随访报告</h1>
+    <p>本报告用于科研演示与临床辅助沟通，最终诊疗意见需由医生确认。</p>
+    <div class=\"cover-meta\">
+      <div><strong>报告编号：</strong>LNF-{report.patient_id}-{report.analysis_id}-{report.id}</div>
+      <div><strong>报告状态：</strong>{escape(watermark)}</div>
+      <div><strong>患者 ID：</strong>{report.patient_id}</div>
+      <div><strong>生成时间：</strong>{report.created_at}</div>
+    </div>
+  </section>
+  <section class=\"risk-box\">
+    <h2>风险摘要</h2>
+    <div class=\"risk-grid\">
+      <div><strong>风险分层</strong><br />{escape(risk["risk_level"])}</div>
+      <div><strong>风险评分</strong><br />{escape(risk["risk_score"])}</div>
+      <div><strong>建议窗口</strong><br />{escape(risk["followup_window"])}</div>
+      <div><strong>最大径变化</strong><br />{escape(risk["diameter_change"])}</div>
+      <div><strong>体积变化</strong><br />{escape(risk["volume_change"])}</div>
+      <div><strong>密度变化</strong><br />{escape(risk["density_change"])}</div>
+    </div>
+  </section>
   <div class=\"meta\">报告状态：{escape(report.status)} · 报告编号：{report.id}</div>
   {_markdown_to_html(_final_markdown(report))}
+  <section class=\"signature-box\">
+    <div><strong>医生签名：</strong><br /><br />________________________</div>
+    <div><strong>审核/确认日期：</strong><br /><br />________________________</div>
+  </section>
 </body>
 </html>"""
+
 
 
 def _next_version_number(report_id: int, db: Session) -> int:
@@ -348,9 +407,10 @@ def export_report_doc(report_id: int, db: Session = Depends(get_db)) -> Response
     report = db.get(Report, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    analysis = db.get(AnalysisResult, report.analysis_id)
     filename = f"report-{report.patient_id}-{report.id}.doc"
     return Response(
-        content=_report_html(report),
+        content=_report_html(report, analysis),
         media_type="application/msword; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -361,7 +421,8 @@ def export_report_print_html(report_id: int, db: Session = Depends(get_db)) -> H
     report = db.get(Report, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    return HTMLResponse(_report_html(report))
+    analysis = db.get(AnalysisResult, report.analysis_id)
+    return HTMLResponse(_report_html(report, analysis))
 
 
 @router.post("/{report_id}/revisions", response_model=ReportRead)

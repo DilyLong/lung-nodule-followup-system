@@ -59,8 +59,9 @@ export default function App() {
             <FileText size={18} /> 结构化报告
           </button>
         </nav>
-        <div className="sidebar-note">
-          当前为本地演示版：算法接口已预留，可替换真实 DICOM 配准与 ConvLSTM 模型。
+        <div className="sidebar-safety">
+          <strong>安全边界</strong>
+          <span>仅限本地科研演示；AI 评分不可直接用于临床诊疗，真实 DICOM 上传前必须脱敏。</span>
         </div>
       </aside>
       <main className="main-panel">

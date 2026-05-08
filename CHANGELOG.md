@@ -4,6 +4,13 @@
 
 ### Added
 
+- 新增演示首页产品化增强：支持“开始标准演示”一键 reset + prepare，展示训练状态、代表病例报告完成度、最近分析/报告和推荐点击顺序。
+- 新增代表病例故事线：高风险进展、稳定纯磨玻璃、炎性缩小、多发结节差异化随访，并在演示页和病例详情页展示讲解理由。
+- 模型状态页新增训练结果解释区，展示 AUC、Accuracy、Sensitivity、Specificity、Brier Score、校准分箱、训练/验证样本分布和训练样本列表。
+- 新增 UI 安全边界提示：全局侧边栏、演示流程页和上传页提示 synthetic demo、AI 风险评分、DICOM 脱敏和非临床诊疗用途边界。
+- 报告导出增强：Word/打印 HTML 增加封面页、风险摘要框、医生签名区和草稿/最终版水印。
+- README 增加当前完成度、演示截图占位、代表病例故事线、API endpoint 列表和 Roadmap。
+
 - 新增演示流程控制台：侧边栏“演示流程”提供 8 分钟 Demo Walkthrough、重置演示状态和预生成分析/报告入口。
 - 新增 `/demo/walkthrough`、`/demo/reset`、`/demo/prepare` 接口，可清理 synthetic demo 的分析/报告/训练 artifact，并为代表病例预生成分析和草稿报告。
 

@@ -18,8 +18,34 @@
 - 报告版本和审计记录，最终版锁定后可创建修订草稿
 - 模型接入状态页，检查 `.pt` / `.onnx` 权重、队列训练 JSON 模型、推理依赖、当前真实/代理模型模式，并支持模型输入 schema、dry-run 推理自检和队列训练 readiness/run。
 - 系统状态总览页，集中展示后端健康、数据规模、模型状态、导出能力和功能成熟度
+- 演示流程控制台，一键重置并预生成代表病例分析/报告，展示可讲解的临床故事线
+- 训练结果解释页，展示 AUC、Accuracy、Sensitivity、Specificity、Brier Score、校准分箱和训练样本列表
+- 报告导出增强，Word/打印 HTML 包含封面、风险摘要、医生签名区和草稿/最终版水印
+
+> 安全边界：当前系统仅用于本地科研演示和继续开发；synthetic demo cohort 不是真实患者数据，AI 风险评分不能直接作为临床诊疗依据，真实 DICOM 上传前必须完成脱敏。
 
 当前暂无真实 CT 数据，因此系统内置模拟病例和模拟影像指标。后续可把 `backend/app/pipeline` 中的占位实现替换为真实 DICOM 读取、三维配准和 PyTorch 模型。
+
+## 当前完成度
+
+| 模块 | 状态 | 说明 |
+|---|---|---|
+| 多期随访工作台 | 可演示 | 支持病例、检查、结节、测量和目标结节独立分析。 |
+| Synthetic demo cohort | 可演示 | 12 例病例、16 个结节、48 条多期测量，含训练标签和代表故事线。 |
+| 真实 CSV 导入治理 | 可演示 | 支持校验、预览、质控评分、批次审计、实体明细和回滚。 |
+| DICOM 上传与浏览 | MVP | 支持脱敏提示、序列信息、窗宽窗位和 ROI 标注生成测量。 |
+| 模型训练闭环 | 研究原型 | 支持 JSON 校准模型训练、校准分箱、样本列表和 dry-run 自检。 |
+| 报告确认与导出 | 可演示 | 支持版本审计、最终版锁定、修订草稿、Word/打印 HTML 导出。 |
+| 真实深度模型 | 待接入 | 可替换 TorchScript/ONNX/PyTorch 权重。 |
+| 真实三维分割/配准 | 待升级 | 当前为 MVP 接口和可解释代理实现。 |
+
+## 演示截图占位
+
+- `docs/screenshots/demo-walkthrough.png`：演示流程控制台。
+- `docs/screenshots/model-status.png`：模型状态与训练解释页。
+- `docs/screenshots/patient-detail.png`：代表病例详情和目标结节分析。
+- `docs/screenshots/report-export.png`：结构化报告与导出预览。
+
 
 ## 目录结构
 
@@ -54,14 +80,42 @@ npm run dev
 
 ## 演示流程
 
-0. 进入侧边栏“演示流程”，点击“一键重置演示状态”，再点击“预生成分析和报告”。
-1. 进入“系统总览”，查看数据质量看板、最近分析和最近报告。
-2. 进入“模型状态”，运行队列训练和模型自检，展示 JSON 风险模型闭环。
-3. 进入病例总览页，打开代表性 synthetic 病例。
-4. 查看 T1/T2/T3 多期 CT 指标和模拟配准对比。
-5. 选择目标结节并点击“运行目标结节分析”。
+0. 进入侧边栏“演示流程”，点击“开始标准演示”，系统会自动 reset synthetic demo 状态并 prepare 代表病例。
+1. 在演示流程页查看状态卡片：训练是否完成、代表病例报告是否生成、最近报告 ID。
+2. 按推荐点击顺序进入“系统总览”，查看数据质量看板、最近分析和最近报告。
+3. 进入“模型状态”，运行队列训练和模型自检，讲解 AUC、Accuracy、Sensitivity、Specificity、Brier Score、校准分箱和训练样本列表。
+4. 打开代表病例故事线：高风险进展、稳定纯磨玻璃、炎性缩小、多发结节差异化随访。
+5. 在病例详情页选择目标结节并点击“运行目标结节分析”。
 6. 查看 AI 风险评分、个性化随访建议、模型解释和版本追踪信息。
 7. 生成结构化报告，填入医生意见/随访计划模板，保存草稿或确认最终版。
+8. 导出 Word 或打印 HTML，报告包含封面、风险摘要、医生签名区和草稿/最终版水印。
+
+## 代表病例故事线
+
+| 病例 | 故事线 | 适合展示 |
+|---|---|---|
+| `SYN-LN-2026-004` | 高风险进展病例 | 实性结节快速增大、高风险评分、短间隔复查和 MDT 建议。 |
+| `SYN-LN-2026-011` | 稳定纯磨玻璃病例 | 多发纯磨玻璃长期稳定、低风险随访、避免过度干预。 |
+| `SYN-LN-2026-008` | 炎性缩小病例 | 结节逐渐缩小、动态变化降低风险分层。 |
+| `SYN-LN-2026-009` | 多发结节差异化随访病例 | 同一患者不同结节风险不同，需要目标结节独立分析。 |
+
+## 主要 API Endpoint
+
+| 模块 | Endpoint | 用途 |
+|---|---|---|
+| 健康检查 | `GET /health` | 后端连通性检查。 |
+| 病例 | `GET /patients`、`GET /patients/{patient_id}` | 病例列表和详情。 |
+| 分析 | `POST /analysis/{patient_id}/run?nodule_id=...` | 运行目标结节独立时序风险分析。 |
+| 报告 | `POST /reports/{analysis_id}`、`PUT /reports/{report_id}` | 生成、编辑、保存和最终确认报告。 |
+| 报告导出 | `GET /reports/{report_id}/export.doc`、`GET /reports/{report_id}/print.html` | 导出 Word 或打印 HTML。 |
+| 报告审计 | `GET /reports/{report_id}/versions`、`GET /reports/{report_id}/audit` | 查看版本和审计记录。 |
+| Demo | `GET /demo/walkthrough`、`GET /demo/representative-cases` | 演示脚本、状态卡片、安全提示和代表病例故事线。 |
+| Demo 控制 | `POST /demo/reset`、`POST /demo/prepare` | 重置 synthetic demo 状态并预生成训练/分析/报告。 |
+| 模型状态 | `GET /model/status`、`POST /model/self-check` | 模型 artifact、依赖、自检和 dry-run。 |
+| 模型训练 | `GET /model/training/readiness`、`POST /model/training/run`、`POST /model/training/demo-cohort` | 队列训练、校准报告和 synthetic cohort 重载。 |
+| 数据导入 | `GET /imports/spec`、`POST /imports/validate`、`POST /imports/preview`、`POST /imports/commit` | 数据集规范、CSV 校验、预览和导入。 |
+| 导入治理 | `GET /imports/batches`、`GET /imports/batches/{batch_id}`、`POST /imports/batches/{batch_id}/rollback` | 批次审计和回滚。 |
+| 研究导出 | `GET /exports/cohort-table.csv`、`GET /exports/measurements.csv`、`GET /exports/research-table.csv`、`GET /exports/research-package.zip` | 队列表、测量表、研究表和 ZIP 数据包。 |
 
 ## 真实数据与模型接入准备
 
@@ -91,9 +145,11 @@ npm run dev
 
 - 后端 smoke 检查：可运行 `cd backend && python smoke_check.py` 快速验证健康检查、导入预览/提交/批次/回滚、分析、报告版本/审计和系统状态。
 
-## 后续扩展
+## Roadmap
 
-- DICOM/NIfTI 真实读取：替换 `pipeline/preprocess.py`
-- 结节分割与影像组学：扩展 `pipeline/features.py`
-- ConvLSTM 模型训练与推理：替换 `pipeline/model.py`
-- PDF/Word 报告导出：扩展 `routes/reports.py`
+1. 接入真实匿名化多期 CT 队列，完善导入质控和训练/验证集拆分。
+2. 用 SimpleITK/ANTs 升级肺部配准、肺野分割和结节坐标映射。
+3. 接入 PyTorch/ONNX 时序模型权重，替换当前 JSON/代理模型。
+4. 增加结节分割、影像组学特征和多模态临床变量融合。
+5. 把 smoke 检查拆分为 pytest，覆盖 demo、训练、报告、导入和系统状态。
+6. 增加受控的 PDF 导出、截图文档和真实演示数据脱敏流程。

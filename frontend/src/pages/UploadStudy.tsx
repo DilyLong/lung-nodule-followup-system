@@ -304,6 +304,16 @@ export default function UploadStudy({ patientId, setPage }: Props) {
         <button className="ghost" onClick={() => setPage({ name: 'dashboard' })}><ArrowLeft size={17} /> 返回工作台</button>
       </header>
 
+      <section className="panel safety-panel">
+        <h2>DICOM 与真实数据安全边界</h2>
+        <div className="safety-list">
+          <span>上传真实影像前必须移除 PatientName、PatientID、AccessionNumber 等身份字段。</span>
+          <span>建议保持“保存 DICOM 脱敏副本”开启；如需强制安全门槛，可勾选“发现未脱敏字段时拒绝上传”。</span>
+          <span>CSV 队列导入会写入本地数据库，导入前请先预览差异和质控问题。</span>
+          <span>本系统输出仅用于科研演示和随访辅助，不能替代医生诊疗意见。</span>
+        </div>
+      </section>
+
       <section className="upload-panel">
         <h2>影像上传</h2>
         <label>

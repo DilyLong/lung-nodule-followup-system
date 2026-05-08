@@ -541,10 +541,47 @@ export interface DemoWalkthroughStep {
   expected: string;
 }
 
+export interface DemoRepresentativeStory {
+  patient_id: number | null;
+  patient_code: string;
+  name: string;
+  label: string;
+  headline: string;
+  demo_reason: string;
+  nodule_count: number;
+  latest_report_id: number | null;
+  latest_report_status: string | null;
+  latest_analysis_id: number | null;
+  latest_risk_level: string | null;
+  latest_risk_score: number | null;
+}
+
+export interface DemoStatus {
+  synthetic_patient_count: number;
+  analysis_count: number;
+  report_count: number;
+  trained: boolean;
+  training_report_exists: boolean;
+  latest_report_id: number | null;
+  latest_report_status: string | null;
+  latest_analysis_id: number | null;
+  latest_analysis_risk_level: string | null;
+  representative_ready_count: number;
+  representative_total_count: number;
+  representative_stories: DemoRepresentativeStory[];
+}
+
+export interface DemoSafetyNotice {
+  title: string;
+  items: string[];
+}
+
 export interface DemoWalkthrough {
   title: string;
   summary: string;
   readiness: ModelTrainingReadiness;
+  status: DemoStatus;
+  safety_notice: DemoSafetyNotice;
   steps: DemoWalkthroughStep[];
 }
 
@@ -559,11 +596,16 @@ export interface DemoPrepareResult {
   prepared: boolean;
   seeded: Record<string, unknown>;
   training: ModelTrainingReport;
-  created: Array<{ patient_id: number; patient_code: string; nodule_id: number; analysis_id: number; report_id: number; risk_level: string; risk_score: number }>;
+  created: Array<{ patient_id: number; patient_code: string; nodule_id: number; analysis_id: number; report_id: number; risk_level: string; risk_score: number; story: { label: string; headline: string; demo_reason: string } }>;
 }
 
 export async function fetchDemoWalkthrough() {
   const { data } = await api.get<DemoWalkthrough>('/demo/walkthrough');
+  return data;
+}
+
+export async function fetchDemoRepresentativeCases() {
+  const { data } = await api.get<DemoRepresentativeStory[]>('/demo/representative-cases');
   return data;
 }
 

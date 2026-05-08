@@ -65,6 +65,23 @@ function inputSourceText(source: string) {
   return labels[source] ?? source;
 }
 
+function metricLabel(key: string) {
+  const labels: Record<string, string> = {
+    auc: 'AUC',
+    accuracy: 'Accuracy',
+    sensitivity: 'Sensitivity',
+    specificity: 'Specificity',
+    brier_score: 'Brier Score',
+  };
+  return labels[key] ?? key;
+}
+
+function labelText(value: unknown) {
+  if (value === 1) return '阳性/恶性';
+  if (value === 0) return '阴性/良性';
+  return previewValue(value);
+}
+
 export default function ModelStatusPage({ setPage }: Props) {
   const [status, setStatus] = useState<ModelRuntimeStatus | null>(null);
   const [selfCheck, setSelfCheck] = useState<ModelSelfCheckReport | null>(null);
@@ -144,6 +161,10 @@ export default function ModelStatusPage({ setPage }: Props) {
   }
 
   const realReady = status.active_mode.startsWith('real_');
+  const latestTrainingReport = trainingReport ?? trainingReadiness?.latest_report as ModelTrainingReport | null;
+  const trainingMetrics = latestTrainingReport?.metrics ?? null;
+  const calibrationBins = latestTrainingReport?.calibration_bins ?? [];
+  const trainingSamples = latestTrainingReport?.samples ?? [];
 
   return (
     <div className="page">
@@ -192,6 +213,7 @@ export default function ModelStatusPage({ setPage }: Props) {
             <PlayCircle size={17} /> {training ? '训练中...' : '运行队列训练'}
           </button>
         </div>
+        <div className="info-banner"><AlertTriangle size={17} /> 队列训练页仅用于科研建模闭环和产品演示；当前 JSON 模型不是获批医疗器械模型，不能直接用于临床诊疗决策。</div>
         <div className="model-summary">
           <div><span>训练就绪</span><strong>{trainingReadiness?.ready ? '是' : '否'}</strong></div>
           <div><span>可用样本</span><strong>{trainingReadiness?.eligible_sample_count ?? '—'}</strong></div>
@@ -209,12 +231,62 @@ export default function ModelStatusPage({ setPage }: Props) {
             {trainingReport.message}
           </div>
         )}
-        {trainingReport?.metrics && (
-          <div className="model-summary">
-            {Object.entries(trainingReport.metrics).map(([key, value]) => (
-              <div key={key}><span>{key}</span><strong>{value.toFixed(3)}</strong></div>
-            ))}
-          </div>
+        {trainingMetrics && (
+          <section className="training-insight-panel">
+            <h3>训练结果解释</h3>
+            <div className="model-summary">
+              {Object.entries(trainingMetrics).map(([key, value]) => (
+                <div key={key}><span>{metricLabel(key)}</span><strong>{value.toFixed(3)}</strong></div>
+              ))}
+            </div>
+            <p className="model-note">AUC/Accuracy/Sensitivity/Specificity 基于当前队列的验证切分；Brier Score 越低代表概率校准越好。Synthetic demo 样本量较小，仅用于展示训练闭环。</p>
+          </section>
+        )}
+        {calibrationBins.length > 0 && (
+          <section className="training-insight-panel">
+            <h3>校准分箱</h3>
+            <div className="table-card validation-table">
+              <table>
+                <thead><tr><th>预测区间</th><th>样本数</th><th>平均预测概率</th><th>观察阳性率</th></tr></thead>
+                <tbody>
+                  {calibrationBins.map((bin, index) => (
+                    <tr key={index}>
+                      <td>{previewValue(bin.range)}</td>
+                      <td>{previewValue(bin.count)}</td>
+                      <td>{previewValue(bin.mean_predicted)}</td>
+                      <td>{previewValue(bin.observed_rate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+        {trainingSamples.length > 0 && (
+          <section className="training-insight-panel">
+            <h3>训练样本列表</h3>
+            <div className="status-grid">
+              <div className="status-card"><span>训练样本</span><strong>{latestTrainingReport?.train_sample_count ?? '—'}</strong></div>
+              <div className="status-card"><span>验证样本</span><strong>{latestTrainingReport?.validation_sample_count ?? '—'}</strong></div>
+              <div className="status-card"><span>阳性样本</span><strong>{latestTrainingReport?.positive_count ?? trainingReadiness?.positive_count ?? '—'}</strong></div>
+              <div className="status-card"><span>阴性样本</span><strong>{latestTrainingReport?.negative_count ?? trainingReadiness?.negative_count ?? '—'}</strong></div>
+            </div>
+            <div className="table-card validation-table">
+              <table>
+                <thead><tr><th>患者</th><th>结节</th><th>标签</th><th>标签来源</th></tr></thead>
+                <tbody>
+                  {trainingSamples.slice(0, 16).map((sample, index) => (
+                    <tr key={`${sample.patient_code}-${sample.nodule_id}-${index}`}>
+                      <td>{previewValue(sample.patient_code)}</td>
+                      <td>{previewValue(sample.nodule_label)} #{previewValue(sample.nodule_id)}</td>
+                      <td>{labelText(sample.label)}</td>
+                      <td>{previewValue(sample.label_source)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
         )}
         {(trainingReadiness?.latest_report || trainingReport) && (
           <div className="spec-kv-grid">

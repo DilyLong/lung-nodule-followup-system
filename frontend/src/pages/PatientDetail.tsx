@@ -9,7 +9,7 @@ import NoduleManager from '../components/NoduleManager';
 import NoduleMetrics from '../components/NoduleMetrics';
 import RiskTrendChart from '../components/RiskTrendChart';
 import StudyTimeline from '../components/StudyTimeline';
-import { createReport, fetchPatient, cohortTableCsvUrl, measurementsCsvUrl, researchPackageZipUrl, researchTableCsvUrl, runAnalysis, type Analysis, type Nodule, type PatientDetail as PatientDetailType } from '../lib/api';
+import { createReport, fetchDemoRepresentativeCases, fetchPatient, cohortTableCsvUrl, measurementsCsvUrl, researchPackageZipUrl, researchTableCsvUrl, runAnalysis, type Analysis, type DemoRepresentativeStory, type Nodule, type PatientDetail as PatientDetailType } from '../lib/api';
 
 function parseModelStatus(analysis?: Analysis) {
   if (!analysis) return null;
@@ -36,6 +36,7 @@ export default function PatientDetail({ patientId, setPage }: Props) {
   const [creatingReport, setCreatingReport] = useState(false);
   const [followupRefreshKey, setFollowupRefreshKey] = useState(0);
   const [selectedNoduleId, setSelectedNoduleId] = useState<number | null>(null);
+  const [demoStory, setDemoStory] = useState<DemoRepresentativeStory | null>(null);
 
   async function loadPatient() {
     const data = await fetchPatient(patientId);
@@ -51,6 +52,12 @@ export default function PatientDetail({ patientId, setPage }: Props) {
       setSelectedNoduleId(patient.nodules[0].id);
     }
   }, [patient, selectedNoduleId]);
+
+  useEffect(() => {
+    fetchDemoRepresentativeCases()
+      .then((stories) => setDemoStory(stories.find((story) => story.patient_id === patientId) ?? null))
+      .catch(() => setDemoStory(null));
+  }, [patientId]);
 
   const nodule = patient?.nodules.find((item) => item.id === selectedNoduleId) ?? patient?.nodules[0];
   const noduleMeasurements = useMemo(() => sortedMeasurements(nodule), [nodule]);
@@ -113,6 +120,21 @@ export default function PatientDetail({ patientId, setPage }: Props) {
           </button>
         </div>
       </header>
+
+      {demoStory && (
+        <section className="panel demo-story-panel">
+          <div>
+            <span className="model-status-chip proxy">{demoStory.label}</span>
+            <h2>{demoStory.headline}</h2>
+            <p>{demoStory.demo_reason}</p>
+          </div>
+          <div className="story-meta">
+            <span>演示病例 {demoStory.patient_code}</span>
+            <span>{demoStory.nodule_count} 个结节</span>
+            <span>{demoStory.latest_report_id ? `已有报告 #${demoStory.latest_report_id}` : '可生成报告'}</span>
+          </div>
+        </section>
+      )}
 
       <section className="panel">
         <h2>多结节管理</h2>
